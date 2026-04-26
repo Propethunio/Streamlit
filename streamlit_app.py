@@ -57,7 +57,7 @@ st.markdown("""
 # --- LOGIKA SYSTEMOWA & SECRETS ---
 api_key = st.secrets.get("API_KEY", "")
 base_url = st.secrets.get("BASE_URL", "")
-selected_model = "gemini-3-flash-preview" # Twoja nazwa modelu
+selected_model = "gemini-3-flash-preview"
 
 if "messages" not in st.session_state:
     st.session_state.messages = []
@@ -77,6 +77,22 @@ with st.sidebar:
     with tab1:
         temp = st.slider("Kreatywność", 0.0, 2.0, 0.7, 0.1)
         sys_prompt = st.text_area("System Prompt", "Jesteś pomocnym asystentem AI z poczuciem humoru.")
+        st.subheader("🤖 Wybór silnika")
+        # Lista modeli
+        available_models = [
+            "gemini-3-flash", 
+            "gemini-3-flash-preview",
+            "gemini-2.5-flash", 
+            "gemini-2.5-flash-preview",
+            "gemini-2.5-pro",
+            "gemini-2-flash"
+        ]
+        # Wybór modelu przez użytkownika
+        selected_model = st.selectbox("Aktywny model:", available_models, index=0)
+        
+        st.divider()
+        temp = st.slider("Kreatywność (Temperature)", 0.0, 2.0, 0.7, 0.1)
+        sys_prompt = st.text_area("System Prompt", "Jesteś pomocnym asystentem AI.")
         
     with tab2:
         uploaded_file = st.file_uploader("Dodaj załącznik", type=['txt', 'py', 'md', 'png', 'jpg', 'jpeg', 'csv', 'xlsx'])
