@@ -171,41 +171,56 @@ for i, msg in enumerate(st.session_state.messages):
             html = text_to_speech(msg["content"], tts_mode)
             if html: st.markdown(html, unsafe_allow_html=True)
 
-# --- LOGIKA CZATU ---
-if prompt := st.chat_input("Zadaj pytanie..."):
+# --- LOGIKA CZATU (Z NAPRAWIONYMI BŁĘDAMI I ANIMACJĄ) ---
+
+# Inicjalizacja zmiennych pomocniczych, aby uniknąć błędu NameError
+# (Ważne, gdy użytkownik nie prześle żadnego pliku)
+if 'file_content_to_send' not in locals():
+    file_content_to_send = ""
+if 'image_payload' not in locals():
+    image_payload = None
+
+if prompt := st.chat_input("Zadaj pytanie systemowi..."):
     if not api_key:
-        st.error("Brak klucza API!")
+        st.error("Błąd: Skonfiguruj klucz API!")
         st.stop()
 
-    # Dodanie i wyświetlenie wiadomości użytkownika
+    # 1. Dodanie wiadomości użytkownika do sesji i wyświetlenie
     st.session_state.messages.append({"role": "user", "content": prompt})
     with st.chat_message("user", avatar="👤"):
         st.markdown(prompt)
 
-    # Przygotowanie kontekstu
-    messages_to_send = [{"role": "system", "content": sys_prompt}]
+    # 2. Przygotowanie paczki danych dla API
+    # Pobieramy system prompt z wybranej osobowości (jeśli istnieje) lub pola tekstowego
+    current_sys_prompt = sys_prompt if 'sys_prompt' in locals() else "Jesteś pomocnym asystentem."
     
-    # Dodanie plików/obrazów do kontekstu
-    user_payload = [{"type": "text", "text": prompt}]
+    messages_to_send = [{"role": "system", "content": current_sys_prompt}]
+    
+    # Budowa treści ostatniej wiadomości (Tekst + opcjonalnie Plik/Obraz)
+    user_content = [{"type": "text", "text": prompt}]
+    
     if file_content_to_send:
-        user_payload.append({"type": "text", "text": f"KONTEKST PLIKU:\n{file_content_to_send}"})
-    if 'image_payload' in locals() and image_payload:
-        user_payload.append(image_payload)
+        user_content.append({"type": "text", "text": f"\n\n[DODATKOWY KONTEKST Z PLIKU]:\n{file_content_to_send}"})
+    
+    if image_payload:
+        user_content.append(image_payload)
 
-    # Historia (ostatnie 10 wiadomości)
+    # Dodanie historii rozmowy (ostatnie 10 wiadomości)
     for m in st.session_state.messages[-11:-1]:
         messages_to_send.append(m)
     
-    messages_to_send.append({"role": "user", "content": user_payload})
+    # Dodanie aktualnej wiadomości z pełnym załącznikiem
+    messages_to_send.append({"role": "user", "content": user_content})
 
-    # Odpowiedź AI z animacją
+    # 3. Odpowiedź AI z animacją ładowania
     with st.chat_message("assistant", avatar="🌌"):
         status_placeholder = st.empty()
-        # Wyświetlamy loader
+        
+        # Wyświetlamy animowany loader "myślenia"
         status_placeholder.markdown("""
             <div class="thinking-box">
                 <div class="loader"></div>
-                <span>PROCESOWANIE NEURONALNE...</span>
+                <span>PRZETWARZANIE DANYCH...</span>
             </div>
         """, unsafe_allow_html=True)
         
@@ -222,19 +237,24 @@ if prompt := st.chat_input("Zadaj pytanie..."):
             
             for chunk in stream:
                 if chunk.choices[0].delta.content:
+                    # Ukrywamy loader przy pierwszym słowie
                     if full_response == "":
-                        status_placeholder.empty() # Usuwamy loader przy pierwszym słowie
+                        status_placeholder.empty()
                     
                     full_response += chunk.choices[0].delta.content
-                    # Dodajemy kursor '▌' dla efektu pisania
                     response_placeholder.markdown(full_response + "▌")
             
             response_placeholder.markdown(full_response)
+            
+            # Zapis do historii i aktualizacja licznika (szacunkowa)
             st.session_state.messages.append({"role": "assistant", "content": full_response})
+            if "total_tokens" in st.session_state:
+                st.session_state.total_tokens += (len(prompt) + len(full_response)) // 4
+            
             st.rerun()
 
         except Exception as e:
             status_placeholder.empty()
-            st.error(f"Błąd API: {str(e)}")
+            st.error(f"Wystąpił błąd: {str(e)}")
 
 st.markdown("""<div style="text-align: center; opacity: 0.2; font-size: 10px; margin-top: 50px;">NEON ENGINE V3.0</div>""", unsafe_allow_html=True)
