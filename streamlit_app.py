@@ -4,6 +4,7 @@ import base64
 import pandas as pd
 from gtts import gTTS
 import io
+import PyPDF2
 
 # --- KONFIGURACJA STRONY ---
 st.set_page_config(
@@ -126,14 +127,24 @@ with st.sidebar:
     with tab1:
         temp = st.slider("Kreatywność", 0.0, 2.0, 0.7, 0.1)
         sys_prompt = st.text_area("System Prompt", "Jesteś pomocnym asystentem AI.")
-        selected_model = st.selectbox("Model:", ["gemini-2-flash", "gemini-2.5-flash", "gemini-3-flash-preview"])
+        selected_model = st.selectbox("Model:", ["gemini-3-flash-preview", "gemini-2.5-flash-preview", "gemini-2-flash-preview"])
         tts_mode = st.radio("Silnik TTS:", ["Premium (OpenAI)", "Free (gTTS)"])
         
     with tab2:
-        uploaded_file = st.file_uploader("Dodaj załącznik", type=['txt', 'py', 'md', 'png', 'jpg', 'jpeg', 'csv', 'xlsx'])
+        uploaded_file = st.file_uploader("Dodaj załącznik", type=['txt', 'py', 'md', 'png', 'jpg', 'jpeg', 'csv', 'xlsx', 'pdf'])
         file_content_to_send = ""
         if uploaded_file:
             file_type = uploaded_file.name.split('.')[-1].lower()
+            if file_type == 'pdf':
+                try:
+                    pdf_reader = PyPDF2.PdfReader(uploaded_file)
+                    pdf_text = ""
+                    for page in pdf_reader.pages:
+                        pdf_text += page.extract_text() + "\n"
+                    file_content_to_send = pdf_text
+                    st.success("PDF wczytany pomyślnie!")
+                except Exception as e:
+                    st.error(f"Błąd czytania PDF: {e}")
             if file_type in ['txt', 'py', 'md']:
                 file_content_to_send = uploaded_file.read().decode("utf-8")
             elif file_type in ['csv', 'xlsx']:
