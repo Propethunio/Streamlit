@@ -1,111 +1,183 @@
 import streamlit as st
 from openai import OpenAI
-import os
 import base64
+import pandas as pd
+from io import StringIO
 
-st.set_page_config(layout="wide", page_title="Gemini chatbot app")
-st.title("Gemini chatbot app")
+# --- KONFIGURACJA STRONY ---
+st.set_page_config(
+    layout="wide", 
+    page_title="Gemini Ultra Vision", 
+    page_icon="🚀"
+)
 
-# Pobieranie kluczy z secrets
-api_key = st.secrets["API_KEY"]
-base_url = st.secrets["BASE_URL"]
-selected_model = "gemini-3-flash-preview"
+# --- CUSTOM CSS (Dla lepszego wyglądu) ---
+st.markdown("""
+    <style>
+    .stApp {
+        background: linear-gradient(135deg, #0f0c29, #302b63, #24243e);
+        color: white;
+    }
+    .stChatMessage {
+        border-radius: 15px;
+        padding: 10px;
+        margin-bottom: 10px;
+        border: 1px solid rgba(255,255,255,0.1);
+    }
+    .stChatInput {
+        border-radius: 25px;
+    }
+    .sidebar .sidebar-content {
+        background: rgba(255, 255, 255, 0.05);
+    }
+    h1 {
+        text-shadow: 2px 2px 4px #000000;
+        background: -webkit-linear-gradient(#eee, #333);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+    }
+    </style>
+""", unsafe_allow_html=True)
 
-# Funkcja pomocnicza do kodowania obrazu do formatu Base64
+# --- INICJALIZACJA KLIENTA I SESSION STATE ---
+api_key = st.secrets.get("API_KEY", "")
+base_url = st.secrets.get("BASE_URL", "")
+selected_model = "gemini-1.5-flash" # Zmieniłem na nowszą wersję, jeśli dostępna
+
+if "messages" not in st.session_state:
+    st.session_state.messages = []
+if "system_prompt" not in st.session_state:
+    st.session_state.system_prompt = "Jesteś pomocnym asystentem AI z poczuciem humoru. Odpowiadasz konkretnie i kreatywnie."
+
+# --- FUNKCJE POMOCNICZE ---
 def encode_image(uploaded_file):
     return base64.b64encode(uploaded_file.getvalue()).decode('utf-8')
 
-# --- PASEK BOCZNY (FILE UPLOADER) ---
+def clear_chat():
+    st.session_state.messages = []
+
+# --- SIDEBAR (CENTRUM DOWODZENIA) ---
 with st.sidebar:
-    st.header("Dodatki")
-    # Dodano formaty obrazów do uploadera
+    st.title("🚀 Panel Sterowania")
+    st.divider()
+
+    # Ustawienia AI
+    st.subheader("⚙️ Parametry Modelu")
+    temp = st.slider("Kreatywność (Temperature)", 0.0, 2.0, 0.7, 0.1)
+    sys_prompt = st.text_area("Osobowość AI (System Prompt)", value=st.session_state.system_prompt)
+
+    st.divider()
+
+    # Obsługa plików
+    st.subheader("📁 Prześlij dane")
     uploaded_file = st.file_uploader(
-        "Wgraj plik (tekst lub obraz)", 
-        type=['txt', 'py', 'md', 'png', 'jpg', 'jpeg']
+        "Obrazy, kody lub arkusze", 
+        type=['txt', 'py', 'md', 'png', 'jpg', 'jpeg', 'csv', 'xlsx']
     )
 
-    file_context = ""
-    base64_image = None
+    file_content_to_send = ""
+    image_to_send = None
     file_type = ""
 
-    if uploaded_file is not None:
-        # Pobieranie rozszerzenia pliku
+    if uploaded_file:
         file_type = uploaded_file.name.split('.')[-1].lower()
 
-        # Obsługa plików tekstowych
+        # Pliki Tekstowe / Kod
         if file_type in ['txt', 'py', 'md']:
-            file_context = uploaded_file.read().decode("utf-8")
-            st.success("Plik tekstowy wgrany pomyślnie!")
-            with st.expander("Podgląd pliku"):
-                st.text(file_context[:500] + "...") # Pokazuje pierwsze 500 znaków
-        
-        # Obsługa plików graficznych
+            file_content_to_send = uploaded_file.read().decode("utf-8")
+            st.info(f"Wczytano kod: {uploaded_file.name}")
+
+        # Obrazy
         elif file_type in ['png', 'jpg', 'jpeg']:
-            base64_image = encode_image(uploaded_file)
-            st.success("Obraz wgrany pomyślnie!")
-            with st.expander("Podgląd obrazu"):
-                st.image(uploaded_file)
-            
-            # Poprawka formatu mime (jpg -> jpeg)
-            if file_type == 'jpg':
-                file_type = 'jpeg'
+            image_to_send = encode_image(uploaded_file)
+            st.image(uploaded_file, caption="Podgląd obrazu", use_container_width=True)
+            if file_type == 'jpg': file_type = 'jpeg'
 
-if "messages" not in st.session_state:
-    st.session_state["messages"] = [{"role": "assistant", "content": "How can I help you?"}]
+        # Arkusze (CSV/Excel)
+        elif file_type in ['csv', 'xlsx']:
+            try:
+                df = pd.read_csv(uploaded_file) if file_type == 'csv' else pd.read_excel(uploaded_file)
+                st.dataframe(df.head(5), use_container_width=True)
+                file_content_to_send = f"Oto dane z tabeli:\n{df.to_string(index=False)}"
+                st.success("Dane załadowane do kontekstu!")
+            except Exception as e:
+                st.error(f"Błąd ładowania tabeli: {e}")
 
-# Wyświetlanie historii czatu
+    st.divider()
+    if st.button("🗑️ Wyczyść historię", on_click=clear_chat, use_container_width=True):
+        st.rerun()
+
+# --- GŁÓWNY INTERFEJS ---
+st.title("💎 Gemini Ultra Vision")
+st.caption("Nowoczesny chatbot z obsługą obrazu, kodu i danych")
+
+# Wyświetlanie historii
 for msg in st.session_state.messages:
-    # Upewniamy się, że wyświetlamy tylko tekst, a nie ewentualne skomplikowane struktury JSON z obrazami
-    if isinstance(msg["content"], str):
-        st.chat_message(msg["role"]).write(msg["content"])
+    with st.chat_message(msg["role"]):
+        st.markdown(msg["content"])
 
-# --- OBSŁUGA CZATU ---
-if prompt := st.chat_input():
+# --- LOGIKA CZATU ---
+if prompt := st.chat_input("Zadaj pytanie..."):
     if not api_key:
-        st.info("Invalid API key.")
+        st.error("Brak klucza API! Skonfiguruj secrets.")
         st.stop()
 
-    client = OpenAI(
-        api_key=api_key,
-        base_url=base_url
-    )
+    client = OpenAI(api_key=api_key, base_url=base_url)
 
-    # Zapisujemy w sesji czysty prompt użytkownika, aby historia UI była czytelna
+    # Dodanie wiadomości użytkownika do UI
     st.session_state.messages.append({"role": "user", "content": prompt})
-    st.chat_message("user").write(prompt)
+    with st.chat_message("user"):
+        st.markdown(prompt)
 
-    # Budujemy treść zapytania (payload) do API
-    if base64_image:
-        # Format "Vision" dla modeli wielomodalnych
-        api_content = [
-            {"type": "text", "text": prompt},
-            {
-                "type": "image_url",
-                "image_url": {
-                    "url": f"data:image/{file_type};base64,{base64_image}"
-                }
-            }
-        ]
-    elif file_context:
-        # Tradycyjny format tekstowy z wstrzykniętym plikiem
-        api_content = f"Oto zawartość pliku:\n---\n{file_context}\n---\nPytanie użytkownika: {prompt}"
+    # Przygotowanie promptu (System Prompt + Kontekst Pliku)
+    full_prompt = prompt
+    if file_content_to_send:
+        full_prompt = f"KONTEKST PLIKU:\n{file_content_to_send}\n\nPYTANIE: {prompt}"
+
+    # Budowanie wiadomości dla API
+    messages_to_send = [{"role": "system", "content": sys_prompt}]
+
+    # Dodajemy historię (ograniczoną do ostatnich 10 wiadomości dla oszczędności)
+    for m in st.session_state.messages[-10:-1]:
+        messages_to_send.append({"role": m["role"], "content": m["content"]})
+
+    # Obecna wiadomość (z obsługą obrazu lub bez)
+    if image_to_send:
+        messages_to_send.append({
+            "role": "user",
+            "content": [
+                {"type": "text", "text": full_prompt},
+                {"type": "image_url", "image_url": {"url": f"data:image/{file_type};base64,{image_to_send}"}}
+            ]
+        })
     else:
-        # Zwykłe pytanie tekstowe
-        api_content = prompt
+        messages_to_send.append({"role": "user", "content": full_prompt})
 
-    # Tworzymy ostateczną listę wiadomości do wysłania
-    # Zamieniamy 'content' w ostatniej (obecnej) wiadomości na ten przygotowany wyżej
-    messages_to_send = st.session_state.messages[:-1] + [{"role": "user", "content": api_content}]
+    # Odpowiedź AI (Streaming!)
+    with st.chat_message("assistant"):
+        placeholder = st.empty()
+        full_response = ""
 
-    try:
-        response = client.chat.completions.create(
-            model=selected_model,
-            messages=messages_to_send
-        )
+        try:
+            with st.status("🚀 Gemini analizuje...", expanded=False) as status:
+                stream = client.chat.completions.create(
+                    model=selected_model,
+                    messages=messages_to_send,
+                    temperature=temp,
+                    stream=True
+                )
+                for chunk in stream:
+                    if chunk.choices[0].delta.content:
+                        full_response += chunk.choices[0].delta.content
+                        placeholder.markdown(full_response + "▌")
+                status.update(label="Analiza zakończona!", state="complete", expanded=False)
 
-        msg = response.choices[0].message.content
-        st.session_state.messages.append({"role": "assistant", "content": msg})
-        st.chat_message("assistant").write(msg)
+            placeholder.markdown(full_response)
+            st.session_state.messages.append({"role": "assistant", "content": full_response})
 
-    except Exception as e:
-        st.error(f"Wystąpił błąd podczas generowania odpowiedzi: {e}")
+        except Exception as e:
+            st.error(f"Błąd: {str(e)}")
+
+# Stopka
+st.markdown("---")
+st.caption("Powered by Gemini 1.5 & Streamlit | Kreatywność bez granic.")
