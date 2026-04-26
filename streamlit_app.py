@@ -68,6 +68,26 @@ def clear_chat():
 def encode_image(uploaded_file):
     return base64.b64encode(uploaded_file.getvalue()).decode('utf-8')
 
+def text_to_speech(text):
+    try:
+        response = client.audio.speech.create(
+            model="tts-1",
+            voice="alloy", # Opcje: alloy, echo, fable, onyx, nova, shimmer
+            input=text
+        )
+        # Konwersja na bajty i b64 dla odtwarzacza HTML
+        audio_data = response.content
+        b64 = base64.b64encode(audio_data).decode()
+        md = f"""
+            <audio controls autoplay="true">
+            <source src="data:audio/mp3;base64,{b64}" type="audio/mp3">
+            </audio>
+            """
+        return md
+    except Exception as e:
+        st.error(f"Błąd TTS: {e}")
+        return None
+
 # --- SIDEBAR ---
 with st.sidebar:
     st.markdown("### 🌌 PANEL DOWODZENIA")
@@ -80,7 +100,6 @@ with st.sidebar:
         st.subheader("🤖 Wybór silnika")
         # Lista modeli
         available_models = [
-            "gemini-3-flash", 
             "gemini-3-flash-preview",
             "gemini-2.5-flash", 
             "gemini-2.5-flash-preview",
@@ -177,6 +196,13 @@ if prompt := st.chat_input("Zadaj pytanie..."):
             
             placeholder.markdown(full_response)
             st.session_state.messages.append({"role": "assistant", "content": full_response})
+
+            # --- SEKCJA: ODSŁUCH ---
+            if st.button("🔊 Odsłuchaj odpowiedź"):
+                with st.spinner("Generowanie głosu..."):
+                    audio_html = text_to_speech(full_response)
+                    if audio_html:
+                        st.markdown(audio_html, unsafe_allow_html=True)
 
         except Exception as e:
             st.error(f"Błąd API: {str(e)}")
