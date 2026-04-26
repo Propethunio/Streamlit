@@ -82,6 +82,8 @@ def encode_image(uploaded_file):
 
 def text_to_speech_openai(text):
     try:
+        # Jeśli używasz oficjalnego API OpenAI, upewnij się, że base_url jest poprawny
+        # Dla standardowego OpenAI endpoint to: https://api.openai.com/v1/audio/speech
         response = client.audio.speech.create(
             model="tts-1",
             voice="alloy",
@@ -91,8 +93,10 @@ def text_to_speech_openai(text):
         b64 = base64.b64encode(audio_data).decode()
         return f'<audio controls autoplay="true"><source src="data:audio/mp3;base64,{b64}" type="audio/mp3"></audio>'
     except Exception as e:
-        st.error(f"Błąd OpenAI TTS: {e}")
-        return None
+        st.error(f"❌ Błąd OpenAI TTS (404 oznacza brak wsparcia dla TTS na tym endpointcie): {e}")
+        # Opcjonalnie: automatyczny powrót do gTTS przy błędzie
+        st.warning("Próba uruchomienia darmowego silnika (gTTS)...")
+        return text_to_speech_free(text)
 
 def text_to_speech_free(text):
     try:
