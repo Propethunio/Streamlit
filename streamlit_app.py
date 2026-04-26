@@ -3,6 +3,8 @@ from openai import OpenAI
 import base64
 import pandas as pd
 from datetime import datetime
+from gtts import gTTS
+import io
 
 # --- KONFIGURACJA STRONY ---
 st.set_page_config(
@@ -11,7 +13,7 @@ st.set_page_config(
     page_icon="🌌"
 )
 
-# --- ZAAWANSOWANY CSS (Cyberpunk & Glassmorphism) ---
+# --- ZAAWANSOWANY CSS ---
 st.markdown("""
     <style>
     .stApp {
@@ -51,13 +53,20 @@ st.markdown("""
         color: black;
         box-shadow: 0 0 20px #00d4ff;
     }
+    
+    audio {
+        filter: invert(100%) hue-rotate(180deg) brightness(1.5);
+        height: 40px;
+        width: 100%;
+        margin-top: 10px;
+    }
     </style>
 """, unsafe_allow_html=True)
 
 # --- LOGIKA SYSTEMOWA & SECRETS ---
 api_key = st.secrets.get("API_KEY", "")
 base_url = st.secrets.get("BASE_URL", "")
-selected_model = "gemini-3-flash-preview"
+client = OpenAI(api_key=api_key, base_url=base_url) if api_key else None
 
 if "messages" not in st.session_state:
     st.session_state.messages = []
@@ -68,24 +77,29 @@ def clear_chat():
 def encode_image(uploaded_file):
     return base64.b64encode(uploaded_file.getvalue()).decode('utf-8')
 
-def text_to_speech(text):
+def text_to_speech_openai(text):
     try:
         response = client.audio.speech.create(
             model="tts-1",
-            voice="alloy", # Opcje: alloy, echo, fable, onyx, nova, shimmer
-            input=text
+            voice="alloy",
+            input=text[:4096] # Limit znaków dla OpenAI
         )
-        # Konwersja na bajty i b64 dla odtwarzacza HTML
         audio_data = response.content
         b64 = base64.b64encode(audio_data).decode()
-        md = f"""
-            <audio controls autoplay="true">
-            <source src="data:audio/mp3;base64,{b64}" type="audio/mp3">
-            </audio>
-            """
-        return md
+        return f'<audio controls autoplay="true"><source src="data:audio/mp3;base64,{b64}" type="audio/mp3"></audio>'
     except Exception as e:
-        st.error(f"Błąd TTS: {e}")
+        st.error(f"Błąd OpenAI TTS: {e}")
+        return None
+
+def text_to_speech_free(text):
+    try:
+        tts = gTTS(text=text, lang='pl')
+        fp = io.BytesIO()
+        tts.write_to_fp(fp)
+        audio_b64 = base64.b64encode(fp.getvalue()).decode()
+        return f'<audio controls autoplay="true"><source src="data:audio/mp3;base64,{audio_b64}" type="audio/mp3"></audio>'
+    except Exception as e:
+        st.error(f"Błąd Free TTS: {e}")
         return None
 
 # --- SIDEBAR ---
@@ -96,22 +110,18 @@ with st.sidebar:
     
     with tab1:
         temp = st.slider("Kreatywność", 0.0, 2.0, 0.7, 0.1)
-        sys_prompt = st.text_area("System Prompt", "Jesteś pomocnym asystentem AI z poczuciem humoru.")
-        st.subheader("🤖 Wybór silnika")
-        # Lista modeli
-        available_models = [
-            "gemini-3-flash-preview",
-            "gemini-2.5-flash", 
-            "gemini-2.5-flash-preview",
-            "gemini-2.5-pro",
-            "gemini-2-flash"
-        ]
-        # Wybór modelu przez użytkownika
-        selected_model = st.selectbox("Aktywny model:", available_models, index=0)
+        sys_prompt = st.text_area("System Prompt", "Jesteś pomocnym asystentem AI.")
         
+        st.subheader("🤖 Silnik LLM")
+        available_models = ["gemini-3-flash-preview", "gemini-2.5-flash", "gemini-2-flash"]
+        selected_model = st.selectbox("Aktywny model:", available_models)
+        
+        st.divider()
+        st.subheader("🔊 Ustawienia Głosu")
+        tts_mode = st.radio("Tryb TTS:", ["Premium (OpenAI)", "Free (gTTS)"])
+
     with tab2:
         uploaded_file = st.file_uploader("Dodaj załącznik", type=['txt', 'py', 'md', 'png', 'jpg', 'jpeg', 'csv', 'xlsx'])
-        
         file_content_to_send = ""
         image_to_send = None
         file_type = ""
@@ -120,7 +130,6 @@ with st.sidebar:
             file_type = uploaded_file.name.split('.')[-1].lower()
             if file_type in ['txt', 'py', 'md']:
                 file_content_to_send = uploaded_file.read().decode("utf-8")
-                st.info("Plik tekstowy wczytany.")
             elif file_type in ['png', 'jpg', 'jpeg']:
                 image_to_send = encode_image(uploaded_file)
                 st.image(uploaded_file, use_container_width=True)
@@ -128,9 +137,19 @@ with st.sidebar:
             elif file_type in ['csv', 'xlsx']:
                 df = pd.read_csv(uploaded_file) if file_type == 'csv' else pd.read_excel(uploaded_file)
                 file_content_to_send = f"Dane z tabeli:\n{df.to_string(index=False)}"
-                st.success("Tabela załadowana.")
 
     st.divider()
+    
+    # --- PRZYCISK TTS (ZAWSZE WIDOCZNY JEŚLI JEST ODPOWIEDŹ) ---
+    if st.session_state.messages and st.session_state.messages[-1]["role"] == "assistant":
+        st.markdown("### 🎙️ Ostatnia odpowiedź")
+        if st.button("🔊 Odsłuchaj teraz"):
+            last_msg = st.session_state.messages[-1]["content"]
+            with st.spinner("Generowanie..."):
+                html = text_to_speech_openai(last_msg) if tts_mode == "Premium (OpenAI)" else text_to_speech_free(last_msg)
+                if html:
+                    st.markdown(html, unsafe_allow_html=True)
+
     if st.button("🗑️ Wyczyść Historię"):
         clear_chat()
         st.rerun()
@@ -138,7 +157,6 @@ with st.sidebar:
 # --- INTERFEJS GŁÓWNY ---
 st.markdown('<h1 class="big-title">GEMINI ULTRA VISION</h1>', unsafe_allow_html=True)
 
-# Wyświetlanie historii
 for msg in st.session_state.messages:
     with st.chat_message(msg["role"], avatar="👤" if msg["role"]=="user" else "💎"):
         st.markdown(msg["content"])
@@ -149,35 +167,15 @@ if prompt := st.chat_input("Zadaj pytanie..."):
         st.error("Brak klucza API!")
         st.stop()
 
-    client = OpenAI(api_key=api_key, base_url=base_url)
-
-    # UI: Dodaj pytanie użytkownika
     st.session_state.messages.append({"role": "user", "content": prompt})
     with st.chat_message("user", avatar="👤"):
         st.markdown(prompt)
 
-    # Przygotowanie promptu z kontekstem
-    full_prompt = prompt
-    if file_content_to_send:
-        full_prompt = f"KONTEKST:\n{file_content_to_send}\n\nPYTANIE: {prompt}"
-
-    # Budowanie listy wiadomości dla API
+    # Budowanie kontekstu
     messages_to_send = [{"role": "system", "content": sys_prompt}]
-    for m in st.session_state.messages[-10:-1]: # Historia
+    for m in st.session_state.messages[-10:]: # Historia
         messages_to_send.append({"role": m["role"], "content": m["content"]})
 
-    if image_to_send:
-        messages_to_send.append({
-            "role": "user",
-            "content": [
-                {"type": "text", "text": full_prompt},
-                {"type": "image_url", "image_url": {"url": f"data:image/{file_type};base64,{image_to_send}"}}
-            ]
-        })
-    else:
-        messages_to_send.append({"role": "user", "content": full_prompt})
-
-    # Odpowiedź AI (Streaming)
     with st.chat_message("assistant", avatar="💎"):
         placeholder = st.empty()
         full_response = ""
@@ -196,13 +194,7 @@ if prompt := st.chat_input("Zadaj pytanie..."):
             
             placeholder.markdown(full_response)
             st.session_state.messages.append({"role": "assistant", "content": full_response})
-
-            # --- SEKCJA: ODSŁUCH ---
-            if st.button("🔊 Odsłuchaj odpowiedź"):
-                with st.spinner("Generowanie głosu..."):
-                    audio_html = text_to_speech(full_response)
-                    if audio_html:
-                        st.markdown(audio_html, unsafe_allow_html=True)
+            st.rerun() # Rerun odświeża sidebar i pokazuje przycisk audio
 
         except Exception as e:
             st.error(f"Błąd API: {str(e)}")
