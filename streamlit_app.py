@@ -13,7 +13,7 @@ st.set_page_config(
     page_icon="🌌"
 )
 
-# --- ZAAWANSOWANY CSS ---
+# --- ZAAWANSOWANY CSS (Cyberpunk & Glassmorphism) ---
 st.markdown("""
     <style>
     .stApp {
@@ -45,7 +45,9 @@ st.markdown("""
         background: rgba(0, 212, 255, 0.1);
         color: #00d4ff;
         transition: 0.3s;
-        width: 100%;
+        width: auto;
+        min-width: 150px;
+        margin-top: 10px;
     }
     
     .stButton>button:hover {
@@ -56,9 +58,10 @@ st.markdown("""
     
     audio {
         filter: invert(100%) hue-rotate(180deg) brightness(1.5);
-        height: 40px;
+        height: 35px;
         width: 100%;
         margin-top: 10px;
+        display: block;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -82,7 +85,7 @@ def text_to_speech_openai(text):
         response = client.audio.speech.create(
             model="tts-1",
             voice="alloy",
-            input=text[:4096] # Limit znaków dla OpenAI
+            input=text[:4000]
         )
         audio_data = response.content
         b64 = base64.b64encode(audio_data).decode()
@@ -112,14 +115,13 @@ with st.sidebar:
         temp = st.slider("Kreatywność", 0.0, 2.0, 0.7, 0.1)
         sys_prompt = st.text_area("System Prompt", "Jesteś pomocnym asystentem AI.")
         
-        st.subheader("🤖 Silnik LLM")
-        available_models = ["gemini-3-flash-preview", "gemini-2.5-flash", "gemini-2-flash"]
-        selected_model = st.selectbox("Aktywny model:", available_models)
+        st.subheader("🤖 Silnik")
+        selected_model = st.selectbox("Model:", ["gemini-3-flash-preview", "gemini-2.5-flash", "gemini-2-flash"])
         
         st.divider()
         st.subheader("🔊 Ustawienia Głosu")
-        tts_mode = st.radio("Tryb TTS:", ["Premium (OpenAI)", "Free (gTTS)"])
-
+        tts_mode = st.radio("Silnik TTS:", ["Premium (OpenAI)", "Free (gTTS)"])
+        
     with tab2:
         uploaded_file = st.file_uploader("Dodaj załącznik", type=['txt', 'py', 'md', 'png', 'jpg', 'jpeg', 'csv', 'xlsx'])
         file_content_to_send = ""
@@ -130,6 +132,7 @@ with st.sidebar:
             file_type = uploaded_file.name.split('.')[-1].lower()
             if file_type in ['txt', 'py', 'md']:
                 file_content_to_send = uploaded_file.read().decode("utf-8")
+                st.info("Tekst wczytany.")
             elif file_type in ['png', 'jpg', 'jpeg']:
                 image_to_send = encode_image(uploaded_file)
                 st.image(uploaded_file, use_container_width=True)
@@ -139,17 +142,6 @@ with st.sidebar:
                 file_content_to_send = f"Dane z tabeli:\n{df.to_string(index=False)}"
 
     st.divider()
-    
-    # --- PRZYCISK TTS (ZAWSZE WIDOCZNY JEŚLI JEST ODPOWIEDŹ) ---
-    if st.session_state.messages and st.session_state.messages[-1]["role"] == "assistant":
-        st.markdown("### 🎙️ Ostatnia odpowiedź")
-        if st.button("🔊 Odsłuchaj teraz"):
-            last_msg = st.session_state.messages[-1]["content"]
-            with st.spinner("Generowanie..."):
-                html = text_to_speech_openai(last_msg) if tts_mode == "Premium (OpenAI)" else text_to_speech_free(last_msg)
-                if html:
-                    st.markdown(html, unsafe_allow_html=True)
-
     if st.button("🗑️ Wyczyść Historię"):
         clear_chat()
         st.rerun()
@@ -157,9 +149,18 @@ with st.sidebar:
 # --- INTERFEJS GŁÓWNY ---
 st.markdown('<h1 class="big-title">GEMINI ULTRA VISION</h1>', unsafe_allow_html=True)
 
-for msg in st.session_state.messages:
+# Wyświetlanie historii z trwałymi przyciskami
+for i, msg in enumerate(st.session_state.messages):
     with st.chat_message(msg["role"], avatar="👤" if msg["role"]=="user" else "💎"):
         st.markdown(msg["content"])
+        
+        if msg["role"] == "assistant":
+            # Każdy przycisk ma unikalny klucz oparty na indeksie wiadomości
+            if st.button(f"🔊 Odsłuchaj", key=f"btn_{i}"):
+                with st.spinner("Generowanie audio..."):
+                    html = text_to_speech_openai(msg["content"]) if tts_mode == "Premium (OpenAI)" else text_to_speech_free(msg["content"])
+                    if html:
+                        st.markdown(html, unsafe_allow_html=True)
 
 # --- LOGIKA CZATU ---
 if prompt := st.chat_input("Zadaj pytanie..."):
@@ -167,15 +168,19 @@ if prompt := st.chat_input("Zadaj pytanie..."):
         st.error("Brak klucza API!")
         st.stop()
 
+    # Dodaj pytanie użytkownika
     st.session_state.messages.append({"role": "user", "content": prompt})
-    with st.chat_message("user", avatar="👤"):
-        st.markdown(prompt)
+    
+    # Przygotowanie kontekstu
+    full_prompt = prompt
+    if file_content_to_send:
+        full_prompt = f"KONTEKST:\n{file_content_to_send}\n\nPYTANIE: {prompt}"
 
-    # Budowanie kontekstu
     messages_to_send = [{"role": "system", "content": sys_prompt}]
-    for m in st.session_state.messages[-10:]: # Historia
+    for m in st.session_state.messages[-10:]:
         messages_to_send.append({"role": m["role"], "content": m["content"]})
 
+    # Odpowiedź AI
     with st.chat_message("assistant", avatar="💎"):
         placeholder = st.empty()
         full_response = ""
@@ -194,7 +199,7 @@ if prompt := st.chat_input("Zadaj pytanie..."):
             
             placeholder.markdown(full_response)
             st.session_state.messages.append({"role": "assistant", "content": full_response})
-            st.rerun() # Rerun odświeża sidebar i pokazuje przycisk audio
+            st.rerun() # Odśwież, aby pojawił się przycisk pod nową wiadomością
 
         except Exception as e:
             st.error(f"Błąd API: {str(e)}")
