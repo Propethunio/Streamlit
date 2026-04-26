@@ -1,2 +1,5 @@
-openai
 streamlit
+openai
+pandas
+gTTS
+openpyxl
