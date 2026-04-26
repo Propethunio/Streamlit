@@ -17,6 +17,27 @@ st.set_page_config(
 # --- ZAAWANSOWANY CSS ---
 st.markdown("""
     <style>
+    @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    .loader {
+        border: 3px solid rgba(0, 212, 255, 0.1);
+        border-top: 3px solid #00d4ff;
+        border-radius: 50%;
+        width: 24px;
+        height: 24px;
+        animation: spin 1s linear infinite;
+        display: inline-block;
+        margin-right: 10px;
+        vertical-align: middle;
+    }
+    .thinking-box {
+        background: rgba(0, 212, 255, 0.05);
+        border: 1px solid rgba(0, 212, 255, 0.2);
+        padding: 15px;
+        border-radius: 10px;
+        color: #00d4ff;
+        font-family: 'Courier New', monospace;
+        margin-bottom: 20px;
+    }
     .stApp {
         background: radial-gradient(circle at top right, #0f0c29, #0b0d17, #000000);
         color: #e6edf3;
@@ -156,43 +177,64 @@ if prompt := st.chat_input("Zadaj pytanie..."):
         st.error("Brak klucza API!")
         st.stop()
 
+    # Dodanie i wyświetlenie wiadomości użytkownika
     st.session_state.messages.append({"role": "user", "content": prompt})
-    st.session_state.total_tokens += estimate_tokens(prompt)
-    
     with st.chat_message("user", avatar="👤"):
         st.markdown(prompt)
 
-    # Przygotowanie API
-    api_messages = [{"role": "system", "content": sys_prompt}]
-    for m in st.session_state.messages[-6:]: # Pamięć 6 ostatnich wiadomości
-        api_messages.append(m)
+    # Przygotowanie kontekstu
+    messages_to_send = [{"role": "system", "content": sys_prompt}]
     
-    # Dodanie kontekstu pliku do ostatniej wiadomości
-    if file_payload:
-        api_messages[-1] = {"role": "user", "content": [{"type": "text", "text": prompt}, file_payload]}
+    # Dodanie plików/obrazów do kontekstu
+    user_payload = [{"type": "text", "text": prompt}]
+    if file_content_to_send:
+        user_payload.append({"type": "text", "text": f"KONTEKST PLIKU:\n{file_content_to_send}"})
+    if 'image_payload' in locals() and image_payload:
+        user_payload.append(image_payload)
 
+    # Historia (ostatnie 10 wiadomości)
+    for m in st.session_state.messages[-11:-1]:
+        messages_to_send.append(m)
+    
+    messages_to_send.append({"role": "user", "content": user_payload})
+
+    # Odpowiedź AI z animacją
     with st.chat_message("assistant", avatar="🌌"):
-        resp_place = st.empty()
-        full_response = ""
+        status_placeholder = st.empty()
+        # Wyświetlamy loader
+        status_placeholder.markdown("""
+            <div class="thinking-box">
+                <div class="loader"></div>
+                <span>PROCESOWANIE NEURONALNE...</span>
+            </div>
+        """, unsafe_allow_html=True)
         
+        response_placeholder = st.empty()
+        full_response = ""
+
         try:
             stream = client.chat.completions.create(
                 model=selected_model,
-                messages=api_messages,
+                messages=messages_to_send,
                 temperature=temp,
                 stream=True
             )
+            
             for chunk in stream:
                 if chunk.choices[0].delta.content:
+                    if full_response == "":
+                        status_placeholder.empty() # Usuwamy loader przy pierwszym słowie
+                    
                     full_response += chunk.choices[0].delta.content
-                    resp_place.markdown(full_response + "▌")
+                    # Dodajemy kursor '▌' dla efektu pisania
+                    response_placeholder.markdown(full_response + "▌")
             
-            resp_place.markdown(full_response)
+            response_placeholder.markdown(full_response)
             st.session_state.messages.append({"role": "assistant", "content": full_response})
-            st.session_state.total_tokens += estimate_tokens(full_response)
             st.rerun()
-            
+
         except Exception as e:
-            st.error(f"Błąd API: {e}")
+            status_placeholder.empty()
+            st.error(f"Błąd API: {str(e)}")
 
 st.markdown("""<div style="text-align: center; opacity: 0.2; font-size: 10px; margin-top: 50px;">NEON ENGINE V3.0</div>""", unsafe_allow_html=True)
