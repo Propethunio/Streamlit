@@ -134,15 +134,6 @@ with st.sidebar:
         temp = st.slider("Kreatywność", 0.0, 2.0, 0.7, 0.1)
         tts_mode = st.radio("Silnik TTS:", ["Premium (OpenAI)", "Free (gTTS)"])
 
-    # --- LICZNIK TOKENÓW ---
-    st.markdown(f"""
-        <div class="token-counter">
-            📊 STATYSTYKI SESJI:<br>
-            • Szacowane Tokeny: {st.session_state.total_tokens}<br>
-            • Koszt szac.: ${(st.session_state.total_tokens/1000000 * 0.15):.5f}
-        </div>
-    """, unsafe_allow_html=True)
-
     with st.expander("📂 ZAŁĄCZNIKI"):
         uploaded_file = st.file_uploader("Plik (PDF/IMG/TXT)", type=['txt', 'pdf', 'png', 'jpg', 'jpeg'])
         file_payload = None
@@ -160,6 +151,15 @@ with st.sidebar:
     if st.button("🗑️ RESETUJ WSZYSTKO", use_container_width=True):
         clear_chat()
         st.rerun()
+
+    # --- LICZNIK TOKENÓW ---
+    st.markdown(f"""
+        <div class="token-counter">
+            📊 STATYSTYKI SESJI:<br>
+            • Szacowane Tokeny: {st.session_state.total_tokens}<br>
+            • Koszt szac.: ${(st.session_state.total_tokens/1000000 * 0.15):.5f}
+        </div>
+    """, unsafe_allow_html=True)
 
 # --- GŁÓWNY INTERFEJS ---
 st.markdown('<h1 class="big-title">NEON GEMINI PRO</h1>', unsafe_allow_html=True)
