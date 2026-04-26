@@ -117,7 +117,7 @@ with st.sidebar:
     
     with st.expander("🛠️ MODEL & PARAMETRY", expanded=True):
         selected_model = st.selectbox("Model Silnika:", 
-            ["gemini-2.0-flash", "gpt-4o", "gpt-4-turbo"], index=0)
+            ["gemini-3-flash-preview", "gemini-2.5-flash-preview", "gemini-2-flash-preview"], index=0)
         temp = st.slider("Kreatywność (Temperature)", 0.0, 2.0, 0.7, 0.1)
         tts_mode = st.radio("Silnik Mowy:", ["Premium (OpenAI)", "Free (gTTS)"])
 
