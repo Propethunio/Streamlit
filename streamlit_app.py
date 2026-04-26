@@ -5,85 +5,79 @@ import pandas as pd
 from gtts import gTTS
 import io
 import PyPDF2
+from datetime import datetime
 
 # --- KONFIGURACJA STRONY ---
 st.set_page_config(
     layout="wide", 
-    page_title="NEON GEMINI AI", 
+    page_title="NEON GEMINI AI PRO", 
     page_icon="🌌"
 )
 
-# --- ZAAWANSOWANY CSS (Cyberpunk, Glassmorphism & Animations) ---
+# --- ZAAWANSOWANY CSS (Cyberpunk & Glassmorphism) ---
 st.markdown("""
     <style>
-    /* Główny motyw */
     .stApp {
-        background: radial-gradient(circle at top right, #0f0c29, #000000);
+        background: radial-gradient(circle at top right, #0f0c29, #0b0d17, #000000);
         color: #e6edf3;
     }
     
     /* Neonowe bąbelki czatu */
     .stChatMessage {
-        background: rgba(255, 255, 255, 0.05) !important;
-        backdrop-filter: blur(12px);
-        border: 1px solid rgba(0, 212, 255, 0.2) !important;
-        border-radius: 20px !important;
-        margin-bottom: 15px !important;
-        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+        background: rgba(255, 255, 255, 0.03) !important;
+        backdrop-filter: blur(15px);
+        border: 1px solid rgba(0, 212, 255, 0.15) !important;
+        border-radius: 15px !important;
+        padding: 20px !important;
+        margin-bottom: 20px !important;
+        transition: 0.3s ease;
+    }
+    .stChatMessage:hover {
+        border: 1px solid rgba(0, 212, 255, 0.4) !important;
+        box-shadow: 0 0 15px rgba(0, 212, 255, 0.1);
     }
 
     .big-title {
-        font-size: 45px !important;
-        font-weight: 800 !important;
-        background: linear-gradient(90deg, #00d4ff, #8a2be2);
+        font-size: 55px !important;
+        font-weight: 900 !important;
+        background: linear-gradient(90deg, #00d4ff, #8a2be2, #ff00c8);
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
         text-align: center;
-        margin-bottom: 20px;
+        margin-top: -50px;
+        filter: drop-shadow(0 0 10px rgba(0, 212, 255, 0.3));
     }
 
-    /* Animacja pulsującego robota podczas myślenia */
     @keyframes pulse {
-        0% { transform: scale(1); opacity: 0.6; filter: drop-shadow(0 0 2px #00d4ff); }
-        50% { transform: scale(1.2); opacity: 1; filter: drop-shadow(0 0 10px #00d4ff); }
-        100% { transform: scale(1); opacity: 0.6; filter: drop-shadow(0 0 2px #00d4ff); }
+        0% { opacity: 0.5; filter: drop-shadow(0 0 2px #00d4ff); }
+        50% { opacity: 1; filter: drop-shadow(0 0 12px #00d4ff); }
+        100% { opacity: 0.5; filter: drop-shadow(0 0 2px #00d4ff); }
     }
     .thinking-bot {
-        font-size: 28px;
+        font-size: 20px;
         animation: pulse 1.5s infinite;
-        display: inline-block;
-        margin-bottom: 15px;
         color: #00d4ff;
+        padding: 10px;
+        border-left: 3px solid #00d4ff;
     }
 
-    /* Stylizacja paska Audio */
-    audio {
-        filter: invert(100%) hue-rotate(180deg) brightness(1.5) drop-shadow(0 0 5px #00d4ff);
-        height: 35px;
-        width: 100%;
-        border-radius: 20px;
-        margin-top: 10px;
+    /* Przycisk wysyłania */
+    button[kind="primary"] {
+        background: linear-gradient(45deg, #00d4ff, #8a2be2) !important;
+        border: none !important;
     }
 
-    /* Przycisk */
-    .stButton>button {
-        border-radius: 20px;
-        border: 1px solid #00d4ff;
-        background: rgba(0, 212, 255, 0.1);
-        color: #00d4ff;
-        transition: 0.3s;
-    }
-    .stButton>button:hover {
-        background: #00d4ff;
-        color: black;
-        box-shadow: 0 0 20px #00d4ff;
-    }
+    /* Custom scrollbar */
+    ::-webkit-scrollbar { width: 8px; }
+    ::-webkit-scrollbar-track { background: #0b0d17; }
+    ::-webkit-scrollbar-thumb { background: #1f2937; border-radius: 10px; }
+    ::-webkit-scrollbar-thumb:hover { background: #00d4ff; }
     </style>
 """, unsafe_allow_html=True)
 
-# --- LOGIKA SYSTEMOWA & SECRETS ---
+# --- LOGIKA SYSTEMOWA ---
 api_key = st.secrets.get("API_KEY", "")
-base_url = st.secrets.get("BASE_URL", "")
+base_url = st.secrets.get("BASE_URL", "https://api.openai.com/v1") # Default fallback
 client = OpenAI(api_key=api_key, base_url=base_url) if api_key else None
 
 if "messages" not in st.session_state:
@@ -91,133 +85,140 @@ if "messages" not in st.session_state:
 
 def clear_chat():
     st.session_state.messages = []
+    st.cache_data.clear()
 
-def encode_image(uploaded_file):
-    return base64.b64encode(uploaded_file.getvalue()).decode('utf-8')
+def encode_image(file):
+    return base64.b64encode(file.read()).decode('utf-8')
 
-def text_to_speech_openai(text):
+def text_to_speech(text, mode):
     try:
-        response = client.audio.speech.create(
-            model="tts-1",
-            voice="alloy",
-            input=text[:4000]
-        )
-        audio_data = response.content
+        if mode == "Premium (OpenAI)":
+            response = client.audio.speech.create(
+                model="tts-1",
+                voice="alloy",
+                input=text[:4000]
+            )
+            audio_data = response.content
+        else:
+            tts = gTTS(text=text, lang='pl')
+            fp = io.BytesIO()
+            tts.write_to_fp(fp)
+            audio_data = fp.getvalue()
+        
         b64 = base64.b64encode(audio_data).decode()
         return f'<audio controls autoplay="true"><source src="data:audio/mp3;base64,{b64}" type="audio/mp3"></audio>'
-    except Exception:
-        return text_to_speech_free(text)
-
-def text_to_speech_free(text):
-    try:
-        tts = gTTS(text=text, lang='pl')
-        fp = io.BytesIO()
-        tts.write_to_fp(fp)
-        audio_b64 = base64.b64encode(fp.getvalue()).decode()
-        return f'<audio controls autoplay="true"><source src="data:audio/mp3;base64,{audio_b64}" type="audio/mp3"></audio>'
     except Exception as e:
-        st.error(f"Błąd TTS: {e}")
+        st.error(f"TTS Error: {e}")
         return None
 
 # --- SIDEBAR ---
 with st.sidebar:
-    st.markdown("### 🌌 PANEL DOWODZENIA")
-    tab1, tab2 = st.tabs(["⚙️ Parametry", "📂 Pliki"])
+    st.markdown("<h2 style='color: #00d4ff;'>🌌 COMMAND CENTER</h2>", unsafe_allow_html=True)
     
-    with tab1:
-        temp = st.slider("Kreatywność", 0.0, 2.0, 0.7, 0.1)
-        sys_prompt = st.text_area("System Prompt", "Jesteś pomocnym asystentem AI.")
-        selected_model = st.selectbox("Model:", ["gemini-3-flash-preview", "gemini-2.5-flash-preview", "gemini-2-flash-preview"])
-        tts_mode = st.radio("Silnik TTS:", ["Premium (OpenAI)", "Free (gTTS)"])
+    with st.expander("🛠️ MODEL & PARAMETRY", expanded=True):
+        selected_model = st.selectbox("Model Silnika:", 
+            ["gemini-2.0-flash", "gpt-4o", "gpt-4-turbo"], index=0)
+        temp = st.slider("Kreatywność (Temperature)", 0.0, 2.0, 0.7, 0.1)
+        tts_mode = st.radio("Silnik Mowy:", ["Premium (OpenAI)", "Free (gTTS)"])
+
+    with st.expander("📂 ANALIZA DANYCH"):
+        uploaded_file = st.file_uploader("Dodaj plik (PDF, IMG, CSV...)", 
+            type=['txt', 'py', 'md', 'png', 'jpg', 'jpeg', 'csv', 'xlsx', 'pdf'])
         
-    with tab2:
-        uploaded_file = st.file_uploader("Dodaj załącznik", type=['txt', 'py', 'md', 'png', 'jpg', 'jpeg', 'csv', 'xlsx', 'pdf'])
-        file_content_to_send = ""
+        file_payload = None
         if uploaded_file:
             file_type = uploaded_file.name.split('.')[-1].lower()
-            if file_type == 'pdf':
-                try:
-                    pdf_reader = PyPDF2.PdfReader(uploaded_file)
-                    pdf_text = ""
-                    for page in pdf_reader.pages:
-                        pdf_text += page.extract_text() + "\n"
-                    file_content_to_send = pdf_text
-                    st.success("PDF wczytany pomyślnie!")
-                except Exception as e:
-                    st.error(f"Błąd czytania PDF: {e}")
-            if file_type in ['txt', 'py', 'md']:
-                file_content_to_send = uploaded_file.read().decode("utf-8")
+            if file_type in ['png', 'jpg', 'jpeg']:
+                img_b64 = encode_image(uploaded_file)
+                file_payload = {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{img_b64}"}}
+                st.image(uploaded_file, caption="Podgląd obrazu", use_container_width=True)
+            elif file_type == 'pdf':
+                reader = PyPDF2.PdfReader(uploaded_file)
+                text = "\n".join([page.extract_text() for page in reader.pages if page.extract_text()])
+                file_payload = {"type": "text", "text": f"KONTEKST PDF:\n{text}"}
+                st.info("PDF wczytany")
             elif file_type in ['csv', 'xlsx']:
                 df = pd.read_csv(uploaded_file) if file_type == 'csv' else pd.read_excel(uploaded_file)
-                file_content_to_send = f"Dane z tabeli:\n{df.to_string(index=False)}"
+                file_payload = {"type": "text", "text": f"DANE TABELARYCZNE:\n{df.to_string()}"}
+                st.dataframe(df.head(5))
 
-    if st.button("🗑️ Wyczyść Historię"):
+    st.markdown("---")
+    if st.button("🗑️ WYCZYŚĆ SESJĘ", use_container_width=True):
         clear_chat()
         st.rerun()
+    
+    # Export Chat
+    if st.session_state.messages:
+        chat_text = "\n".join([f"{m['role'].upper()}: {m['content']}" for m in st.session_state.messages])
+        st.download_button("💾 POBIERZ CZAT", chat_text, file_name=f"chat_{datetime.now().strftime('%H%M')}.txt", use_container_width=True)
 
 # --- INTERFEJS GŁÓWNY ---
-st.markdown('<h1 class="big-title">GEMINI ULTRA VISION</h1>', unsafe_allow_html=True)
+st.markdown('<h1 class="big-title">NEON GEMINI AI</h1>', unsafe_allow_html=True)
 
-# Wyświetlanie historii (zawsze najpierw)
+# Wyświetlanie historii
 for i, msg in enumerate(st.session_state.messages):
-    with st.chat_message(msg["role"], avatar="👤" if msg["role"]=="user" else "💎"):
+    with st.chat_message(msg["role"], avatar="👤" if msg["role"]=="user" else "🌌"):
         st.markdown(msg["content"])
         if msg["role"] == "assistant":
-            if st.button(f"🔊 Odsłuchaj", key=f"btn_{i}"):
-                with st.spinner("Generowanie audio..."):
-                    html = text_to_speech_openai(msg["content"]) if tts_mode == "Premium (OpenAI)" else text_to_speech_free(msg["content"])
+            col1, col2 = st.columns([1, 4])
+            with col1:
+                if st.button(f"🔊 Graj", key=f"tts_{i}"):
+                    html = text_to_speech(msg["content"], tts_mode)
                     if html: st.markdown(html, unsafe_allow_html=True)
 
-# --- LOGIKA CZATU ---
-if prompt := st.chat_input("Zadaj pytanie..."):
+# --- CZAT LOGIC ---
+if prompt := st.chat_input("Napisz wiadomość do systemu..."):
     if not api_key:
-        st.error("Brak klucza API!")
+        st.error("Błąd: Skonfiguruj klucz API w secrets!")
         st.stop()
 
-    # 1. Natychmiastowe dodanie i wyświetlenie wiadomości użytkownika
+    # Dodaj prompt użytkownika do sesji
     st.session_state.messages.append({"role": "user", "content": prompt})
     with st.chat_message("user", avatar="👤"):
         st.markdown(prompt)
 
-    # Przygotowanie kontekstu
-    messages_to_send = [{"role": "system", "content": sys_prompt}]
-    if file_content_to_send:
-        messages_to_send.append({"role": "user", "content": f"KONTEKST Z PLIKU:\n{file_content_to_send}"})
+    # Budowanie wiadomości do API
+    api_messages = [{"role": "system", "content": "Jesteś zaawansowanym systemem AI o nazwie NEON GEMINI. Odpowiadasz konkretnie, w nowoczesnym stylu, używając Markdown."}]
     
-    for m in st.session_state.messages[-10:]:
-        messages_to_send.append({"role": m["role"], "content": m["content"]})
+    # Dodaj plik jeśli istnieje (jako kontekst do ostatniej wiadomości)
+    current_user_content = [{"type": "text", "text": prompt}]
+    if file_payload:
+        current_user_content.append(file_payload)
+    
+    # Historia (ostatnie 10 wiadomości)
+    for m in st.session_state.messages[:-1]:
+        api_messages.append(m)
+    
+    api_messages.append({"role": "user", "content": current_user_content})
 
-    # 2. Odpowiedź AI w czasie rzeczywistym
-    with st.chat_message("assistant", avatar="💎"):
-        status_placeholder = st.empty()
-        # Wyświetlamy animowanego robocika
-        status_placeholder.markdown('<div class="thinking-bot">🤖⚡ <i>System przetwarza dane...</i></div>', unsafe_allow_html=True)
+    with st.chat_message("assistant", avatar="🌌"):
+        status = st.empty()
+        status.markdown('<div class="thinking-bot">🌀 SYNCHRONIZACJA NEURONALNA...</div>', unsafe_allow_html=True)
         
-        response_placeholder = st.empty()
+        response_place = st.empty()
         full_response = ""
 
         try:
             stream = client.chat.completions.create(
                 model=selected_model,
-                messages=messages_to_send,
+                messages=api_messages,
                 temperature=temp,
                 stream=True
             )
+            
             for chunk in stream:
-                if chunk.choices[0].delta.content:
-                    if full_response == "":
-                        status_placeholder.empty() # Robocik znika przy pierwszym słowie
-                    full_response += chunk.choices[0].delta.content
-                    response_placeholder.markdown(full_response + "▌")
+                content = chunk.choices[0].delta.content
+                if content:
+                    full_response += content
+                    status.empty() # Usuń status przy pierwszej paczce danych
+                    response_place.markdown(full_response + " ▌")
             
-            response_placeholder.markdown(full_response)
+            response_place.markdown(full_response)
             st.session_state.messages.append({"role": "assistant", "content": full_response})
-            
-            # Rerun na końcu, żeby pod nową wiadomością pojawił się przycisk "Odsłuchaj"
             st.rerun()
 
         except Exception as e:
-            status_placeholder.empty()
-            st.error(f"Błąd API: {str(e)}")
+            status.empty()
+            st.error(f"BŁĄD SYSTEMU: {str(e)}")
 
-st.markdown("""<div style="text-align: center; opacity: 0.3; padding-top: 50px;">NEON ENGINE ACTIVE</div>""", unsafe_allow_html=True)
+st.markdown("""<div style="text-align: center; opacity: 0.2; font-size: 10px; letter-spacing: 2px; margin-top: 50px;">CORE VERSION 2.5 | NEON PROTOCOL ACTIVE</div>""", unsafe_allow_html=True)
