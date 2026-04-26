@@ -42,7 +42,7 @@ st.markdown("""
 # --- INICJALIZACJA KLIENTA I SESSION STATE ---
 api_key = st.secrets.get("API_KEY", "")
 base_url = st.secrets.get("BASE_URL", "")
-selected_model = "gemini-3-flash" # Zmieniłem na nowszą wersję, jeśli dostępna
+selected_model = "gemini-3-flash-preview" # Zmieniłem na nowszą wersję, jeśli dostępna
 
 if "messages" not in st.session_state:
     st.session_state.messages = []
