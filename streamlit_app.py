@@ -90,10 +90,6 @@ with st.sidebar:
         # Wybór modelu przez użytkownika
         selected_model = st.selectbox("Aktywny model:", available_models, index=0)
         
-        st.divider()
-        temp = st.slider("Kreatywność (Temperature)", 0.0, 2.0, 0.7, 0.1)
-        sys_prompt = st.text_area("System Prompt", "Jesteś pomocnym asystentem AI.")
-        
     with tab2:
         uploaded_file = st.file_uploader("Dodaj załącznik", type=['txt', 'py', 'md', 'png', 'jpg', 'jpeg', 'csv', 'xlsx'])
         
