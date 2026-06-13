@@ -39,7 +39,7 @@ st.markdown("""
         border-radius: 10px;
         color: #00d4ff;
         font-family: 'Courier New', monospace;
-        //margin-bottom: 20px;
+        margin-bottom: 20px;
     }
     .stApp {
         background: radial-gradient(circle at top right, #0f0c29, #0b0d17, #000000);
@@ -77,8 +77,8 @@ st.markdown("""
     
     /* IDEALNIE RÓWNE I DOPASOWANE SEPARATORY */
     .custom-hr {
-        margin-top: 15px !important;
-        margin-bottom: 15px !important;
+        //margin-top: 15px !important;
+        //margin-bottom: 15px !important;
         border: 0;
         border-top: 1px solid rgba(0, 212, 255, 0.15);
     }
