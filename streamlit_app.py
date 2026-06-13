@@ -39,7 +39,7 @@ st.markdown("""
         border-radius: 10px;
         color: #00d4ff;
         font-family: 'Courier New', monospace;
-        margin-bottom: 20px;
+        //margin-bottom: 20px;
     }
     .stApp {
         background: radial-gradient(circle at top right, #0f0c29, #0b0d17, #000000);
@@ -70,7 +70,6 @@ st.markdown("""
         background: rgba(255, 255, 255, 0.02) !important;
         border: 1px solid rgba(0, 212, 255, 0.1) !important;
         border-radius: 10px !important;
-        //margin-bottom: 12px !important;
     }
     [data-testid="stSidebar"] p {
         color: #b4c6ef !important;
