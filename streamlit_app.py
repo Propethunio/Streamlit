@@ -70,7 +70,7 @@ st.markdown("""
         background: rgba(255, 255, 255, 0.02) !important;
         border: 1px solid rgba(0, 212, 255, 0.1) !important;
         border-radius: 10px !important;
-        margin-bottom: 12px !important;
+        //margin-bottom: 12px !important;
     }
     [data-testid="stSidebar"] p {
         color: #b4c6ef !important;
@@ -347,4 +347,4 @@ if prompt := st.chat_input("Zadaj pytanie systemowi..."):
             status_placeholder.empty()
             st.error(f"Wystąpił błąd silnika LLM: {str(e)}")
 
-st.markdown("""<div style="text-align: center; opacity: 0.2; font-size: 10px; margin-top: 50px;">NEON ENGINE V3.5 | MODULAR RAG ACTIVE</div>""", unsafe_allow_html=True)
+st.markdown("""<div style="text-align: center; opacity: 0.2; font-size: 10px;">NEON ENGINE V3.5 | MODULAR RAG ACTIVE</div>""", unsafe_allow_html=True)
