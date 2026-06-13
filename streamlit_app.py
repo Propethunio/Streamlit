@@ -4,8 +4,11 @@ import base64
 import pandas as pd
 from gtts import gTTS
 import io
-import PyPDF2
 from datetime import datetime
+
+# Importy Twoich dwóch nowych modułów
+import docloader
+import embedder_rag
 
 # --- KONFIGURACJA STRONY ---
 st.set_page_config(
@@ -75,20 +78,16 @@ api_key = st.secrets.get("API_KEY", "")
 base_url = st.secrets.get("BASE_URL", "https://api.openai.com/v1")
 client = OpenAI(api_key=api_key, base_url=base_url) if api_key else None
 
-# Inicjalizacja stanów sesji
-if "messages" not in st.session_state:
-    st.session_state.messages = []
-if "total_tokens" not in st.session_state:
-    st.session_state.total_tokens = 0
+# Inicjalizacja stanów sesji (RAG oraz Czat)
+if "messages" not in st.session_state: st.session_state.messages = []
+if "total_tokens" not in st.session_state: st.session_state.total_tokens = 0
+if "faiss_index" not in st.session_state: st.session_state.faiss_index = None
+if "indexed_files" not in st.session_state: st.session_state.indexed_files = []
 
 def clear_chat():
     st.session_state.messages = []
     st.session_state.total_tokens = 0
     st.cache_data.clear()
-
-def estimate_tokens(text):
-    # Proste przybliżenie: 1 token ≈ 4 znaki dla angielskiego/polskiego
-    return len(text) // 4
 
 def text_to_speech(text, mode):
     try:
@@ -106,11 +105,15 @@ def text_to_speech(text, mode):
         st.error(f"Błąd audio: {e}")
         return None
 
-# --- SIDEBAR ---
+# Inicjalizacja zmiennych dla załączników jednorazowych, aby uniknąć błędu NameError
+file_content_to_send = ""
+image_payload = None
+
+# --- SIDEBAR (Panel boczny) ---
 with st.sidebar:
     st.markdown("<h2 style='color: #00d4ff;'>🌌 SYSTEM CONTROL</h2>", unsafe_allow_html=True)
     
-    # --- NOWA SEKCJA: OSOBOWOŚĆ ---
+    # Wybór osobowości
     with st.expander("🎭 OSOBOWOŚĆ AI", expanded=True):
         persona = st.selectbox("Wybierz tryb:", [
             "Asystent (Standard)", 
@@ -129,41 +132,75 @@ with st.sidebar:
         }
         sys_prompt = st.text_area("System Prompt (Custom):", persona_prompts[persona])
 
+    # Parametry modelu
     with st.expander("🛠️ PARAMETRY SILNIKA"):
-        selected_model = st.selectbox("Model:", ["gemini-3-flash-preview", "gemini-2.5-flash-preview", "gemini-2-flash-preview"])
+        selected_model = st.selectbox("Model:", ["gemini-2.5-flash", "gemini-2.0-flash", "gpt-4o"])
         temp = st.slider("Kreatywność", 0.0, 2.0, 0.7, 0.1)
         tts_mode = st.radio("Silnik TTS:", ["Premium (OpenAI)", "Free (gTTS)"])
 
-    with st.expander("📂 ZAŁĄCZNIKI"):
-        uploaded_file = st.file_uploader("Plik (PDF/IMG/TXT)", type=['txt', 'pdf', 'png', 'jpg', 'jpeg'])
-        file_payload = None
+    # 1. JEDNORAZOWE ZAŁĄCZNIKI (Dla bieżącej wiadomości)
+    with st.expander("📂 JEDNORAZOWY ZAŁĄCZNIK"):
+        uploaded_file = st.file_uploader("Plik (PDF/IMG/TXT)", type=['txt', 'pdf', 'png', 'jpg', 'jpeg'], key="single_file")
         if uploaded_file:
             f_type = uploaded_file.name.split('.')[-1].lower()
             if f_type in ['png', 'jpg', 'jpeg']:
                 img_b64 = base64.b64encode(uploaded_file.read()).decode('utf-8')
-                file_payload = {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{img_b64}"}}
-                st.image(uploaded_file, caption="Załadowano obraz")
+                image_payload = {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{img_b64}"}}
+                st.image(uploaded_file, caption="Załadowano obraz do analizy")
             elif f_type == 'pdf':
-                reader = PyPDF2.PdfReader(uploaded_file)
-                text = "\n".join([p.extract_text() for p in reader.pages if p.extract_text()])
-                file_payload = {"type": "text", "text": f"DANE Z PLIKU:\n{text}"}
+                # Używamy Twojego docloader do wyciągnięcia tekstu z pojedynczego PDF
+                file_content_to_send = docloader.load_pdf_from_stream(uploaded_file)
+                st.caption("✅ Wyciągnięto tekst z pliku PDF")
+            elif f_type == 'txt':
+                file_content_to_send = uploaded_file.read().decode("utf-8")
+                st.caption("✅ Załadowano plik tekstowy")
 
+    # 2. TRWAŁA BAZA WIEDZY RAG (Wyszukiwanie FAISS w wielu plikach na raz)
+    with st.expander("📚 TRWAŁA BAZA WIEDZY RAG (MULTI-PDF)"):
+        rag_files = st.file_uploader("Wgraj dokumenty PDF do bazy wiedzy", type=['pdf'], accept_multiple_files=True, key="rag_files")
+        if rag_files:
+            if st.button("🚀 INICJALIZUJ BAZĘ RAG", use_container_width=True):
+                with st.spinner("Przetwarzanie dokumentów i budowanie indeksu FAISS..."):
+                    documents = []
+                    for f in rag_files:
+                        # Odczyt tekstu przy użyciu docloader
+                        text = docloader.load_pdf_from_stream(f)
+                        documents.append({"filename": f.name, "text": text})
+                    
+                    # Tworzenie bazy wektorowej przy użyciu embedder_rag
+                    index_obj = embedder_rag.create_index(documents)
+                    if index_obj:
+                        st.session_state.faiss_index = index_obj
+                        st.session_state.indexed_files = [f.name for f in rag_files]
+                        st.success("Baza wiedzy zindeksowana pomyślnie!")
+                    else:
+                        st.error("Nie udało się przetworzyć tekstu z podanych plików.")
+        
+        if st.session_state.indexed_files:
+            st.write("Aktywne pliki w bazie RAG:")
+            for name in st.session_state.indexed_files:
+                st.caption(f"• {name}")
+
+    # Przycisk resetu
     if st.button("🗑️ RESETUJ WSZYSTKO", use_container_width=True):
         clear_chat()
+        st.session_state.faiss_index = None
+        st.session_state.indexed_files = []
         st.rerun()
 
-    # --- LICZNIK TOKENÓW ---
+    # Licznik tokenów
     st.markdown(f"""
         <div class="token-counter">
             📊 STATYSTYKI SESJI:<br>
             • Szacowane Tokeny: {st.session_state.total_tokens}<br>
-            • Koszt szac.: ${(st.session_state.total_tokens/1000000 * 0.15):.5f}
+            • Stan bazy RAG: {"AKTYWNA ✅" if st.session_state.faiss_index else "PUSTA ❌"}
         </div>
     """, unsafe_allow_html=True)
 
 # --- GŁÓWNY INTERFEJS ---
-st.markdown('<h1 class="big-title">NEON GEMINI PRO</h1>', unsafe_allow_html=True)
+st.markdown('<h1 class="big-title">NEON GEMINI RAG PRO</h1>', unsafe_allow_html=True)
 
+# Wyświetlanie historii czatu
 for i, msg in enumerate(st.session_state.messages):
     with st.chat_message(msg["role"], avatar="👤" if msg["role"]=="user" else "🌌"):
         st.markdown(msg["content"])
@@ -171,56 +208,56 @@ for i, msg in enumerate(st.session_state.messages):
             html = text_to_speech(msg["content"], tts_mode)
             if html: st.markdown(html, unsafe_allow_html=True)
 
-# --- LOGIKA CZATU (Z NAPRAWIONYMI BŁĘDAMI I ANIMACJĄ) ---
-
-# Inicjalizacja zmiennych pomocniczych, aby uniknąć błędu NameError
-# (Ważne, gdy użytkownik nie prześle żadnego pliku)
-if 'file_content_to_send' not in locals():
-    file_content_to_send = ""
-if 'image_payload' not in locals():
-    image_payload = None
-
+# --- LOGIKA CZATU Z PEŁNĄ INTEGRACJĄ RAG ORAZ ZAŁĄCZNIKÓW ---
 if prompt := st.chat_input("Zadaj pytanie systemowi..."):
     if not api_key:
         st.error("Błąd: Skonfiguruj klucz API!")
         st.stop()
 
-    # 1. Dodanie wiadomości użytkownika do sesji i wyświetlenie
+    # Dodanie wiadomości użytkownika do sesji i wyświetlenie jej na ekranie
     st.session_state.messages.append({"role": "user", "content": prompt})
     with st.chat_message("user", avatar="👤"):
         st.markdown(prompt)
 
-    # 2. Przygotowanie paczki danych dla API
-    # Pobieramy system prompt z wybranej osobowości (jeśli istnieje) lub pola tekstowego
+    # Przygotowanie system promptu z panelu bocznego
     current_sys_prompt = sys_prompt if 'sys_prompt' in locals() else "Jesteś pomocnym asystentem."
-    
     messages_to_send = [{"role": "system", "content": current_sys_prompt}]
     
-    # Budowa treści ostatniej wiadomości (Tekst + opcjonalnie Plik/Obraz)
+    # Budowa dynamicznej struktury wiadomości użytkownika (tekst + potencjalne załączniki)
     user_content = [{"type": "text", "text": prompt}]
     
+    # Jeśli użytkownik dodał jednorazowy plik (TXT/PDF)
     if file_content_to_send:
-        user_content.append({"type": "text", "text": f"\n\n[DODATKOWY KONTEKST Z PLIKU]:\n{file_content_to_send}"})
+        user_content.append({"type": "text", "text": f"\n\n[DODATKOWY KONTEKST Z ZAŁĄCZONEGO PLIKU]:\n{file_content_to_send}"})
     
+    # Jeśli użytkownik dodał jednorazowy obrazek
     if image_payload:
         user_content.append(image_payload)
 
-    # Dodanie historii rozmowy (ostatnie 10 wiadomości)
+    # --- INTEGRACJA PRZESZUKIWANIA BAZY WIEDZY RAG ---
+    if st.session_state.faiss_index:
+        # Przeszukujemy bazę wektorową za pomocą Twojego skryptu embedder_rag
+        matched_chunks = embedder_rag.retrieve_docs(prompt, st.session_state.faiss_index, k=3)
+        if matched_chunks:
+            rag_context = "\n\n[ISTOTNE INFORMACJE ZNALEZIONE W BAZIE WIEDZY RAG - Wykorzystaj je do odpowiedzi]:\n"
+            for chunk in matched_chunks:
+                rag_context += f"- (Źródło: {chunk['filename']}): \"{chunk['text']}\"\n"
+            user_content.append({"type": "text", "text": rag_context})
+
+    # Ładowanie historii (ostatnie 10 wiadomości) bez aktualnego promptu
     for m in st.session_state.messages[-11:-1]:
         messages_to_send.append(m)
     
-    # Dodanie aktualnej wiadomości z pełnym załącznikiem
+    # Dodanie na sam koniec aktualnej wiadomości użytkownika z kompletem danych (Prompt + Załącznik + RAG)
     messages_to_send.append({"role": "user", "content": user_content})
 
-    # 3. Odpowiedź AI z animacją ładowania
+    # Odpowiedź asystenta w trybie Stream z animacją "Thinking"
     with st.chat_message("assistant", avatar="🌌"):
         status_placeholder = st.empty()
-        
-        # Wyświetlamy animowany loader "myślenia"
         status_placeholder.markdown("""
             <div class="thinking-box">
                 <div class="loader"></div>
-                <span>PRZETWARZANIE DANYCH...</span>
+                <span>PRZETWARZANIE DANYCH (RAG SEMANTIC SEARCH)...</span>
             </div>
         """, unsafe_allow_html=True)
         
@@ -237,7 +274,7 @@ if prompt := st.chat_input("Zadaj pytanie systemowi..."):
             
             for chunk in stream:
                 if chunk.choices[0].delta.content:
-                    # Ukrywamy loader przy pierwszym słowie
+                    # Ukrywamy animację ładowania w momencie pojawienia się pierwszego słowa
                     if full_response == "":
                         status_placeholder.empty()
                     
@@ -246,15 +283,13 @@ if prompt := st.chat_input("Zadaj pytanie systemowi..."):
             
             response_placeholder.markdown(full_response)
             
-            # Zapis do historii i aktualizacja licznika (szacunkowa)
+            # Zapisanie odpowiedzi do historii i aktualizacja licznika tokenów
             st.session_state.messages.append({"role": "assistant", "content": full_response})
-            if "total_tokens" in st.session_state:
-                st.session_state.total_tokens += (len(prompt) + len(full_response)) // 4
-            
+            st.session_state.total_tokens += (len(prompt) + len(full_response)) // 4
             st.rerun()
 
         except Exception as e:
             status_placeholder.empty()
-            st.error(f"Wystąpił błąd: {str(e)}")
+            st.error(f"Wystąpił błąd silnika LLM: {str(e)}")
 
-st.markdown("""<div style="text-align: center; opacity: 0.2; font-size: 10px; margin-top: 50px;">NEON ENGINE V3.0</div>""", unsafe_allow_html=True)
+st.markdown("""<div style="text-align: center; opacity: 0.2; font-size: 10px; margin-top: 50px;">NEON ENGINE V3.5 | MODULAR RAG ACTIVE</div>""", unsafe_allow_html=True)
