@@ -17,7 +17,7 @@ st.set_page_config(
     page_icon="🌌"
 )
 
-# --- ZAAWANSOWANY CSS ---
+# --- ZAAWANSOWANY CSS (Z MODYFIKACJĄ PANELU BOCZNEGO) ---
 st.markdown("""
     <style>
     @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
@@ -60,15 +60,38 @@ st.markdown("""
         text-align: center;
         margin-top: -40px;
     }
+    
+    /* STYLIZACJA PANELU BOCZNEGO */
+    [data-testid="stSidebar"] {
+        background-color: #080911 !important;
+        border-right: 1px solid rgba(0, 212, 255, 0.1) !important;
+    }
+    [data-testid="stSidebar"] .stExpander {
+        background: rgba(255, 255, 255, 0.02) !important;
+        border: 1px solid rgba(0, 212, 255, 0.1) !important;
+        border-radius: 10px !important;
+        margin-bottom: 12px !important;
+    }
+    [data-testid="stSidebar"] p {
+        color: #b4c6ef !important;
+    }
+    
+    /* IDEALNIE RÓWNE I DOPASOWANE SEPARATORY */
+    .custom-hr {
+        margin-top: 15px !important;
+        margin-bottom: 15px !important;
+        border: 0;
+        border-top: 1px solid rgba(0, 212, 255, 0.15);
+    }
+    
     .token-counter {
-        padding: 10px;
+        padding: 12px;
         border-radius: 10px;
-        background: rgba(0, 212, 255, 0.1);
-        border: 1px solid #00d4ff;
+        background: rgba(0, 212, 255, 0.04);
+        border: 1px solid rgba(0, 212, 255, 0.2);
         font-family: monospace;
         font-size: 12px;
         color: #00d4ff;
-        margin-top: 10px;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -100,7 +123,6 @@ def full_factory_reset():
     st.session_state.sys_prompt = "Jesteś pomocnym asystentem AI."
     if "custom_prompt_value" in st.session_state:
         del st.session_state["custom_prompt_value"]
-    # Zmiana wartości klucza wymusza na Streamlit stworzenie widżetów na nowo z domyślnymi parametrami
     st.session_state.reset_key += 1
     st.cache_data.clear()
 
@@ -154,7 +176,7 @@ image_payload = None
 
 # --- SIDEBAR (Panel boczny) ---
 with st.sidebar:
-    st.markdown("<h2 style='color: #00d4ff;'>🌌 SYSTEM CONTROL</h2>", unsafe_allow_html=True)
+    st.markdown("<h2 style='color: #00d4ff; margin-bottom: 20px; font-weight:800; letter-spacing:1px;'>🌌 SYSTEM CONTROL</h2>", unsafe_allow_html=True)
     
     # Wybór osobowości za pomocą zoptymalizowanego fragmentu
     with st.expander("🎭 OSOBOWOŚĆ AI", expanded=True):
@@ -207,7 +229,7 @@ with st.sidebar:
                 st.caption(f"• {name}")
 
     # --- SEKCJA ZARZĄDZANIA RESETAMI ---
-    st.markdown("---")
+    st.markdown('<hr class="custom-hr">', unsafe_allow_html=True)
     
     # Przycisk 1: Czyszczenie samej bazy RAG
     if st.button("🗑️ WYCZYŚĆ BAZĘ WIEDZY RAG", use_container_width=True):
@@ -219,6 +241,9 @@ with st.sidebar:
     if st.button("🚨 CAŁKOWITY RESET SYSTEMU", use_container_width=True, type="primary"):
         full_factory_reset()
         st.rerun()
+
+    # Druga, nowa linia separatora umieszczona dokładnie nad statystykami sesji
+    st.markdown('<hr class="custom-hr">', unsafe_allow_html=True)
 
     # Licznik tokenów i statystyki
     st.markdown(f"""
