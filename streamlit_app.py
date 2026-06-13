@@ -83,6 +83,7 @@ if "messages" not in st.session_state: st.session_state.messages = []
 if "total_tokens" not in st.session_state: st.session_state.total_tokens = 0
 if "faiss_index" not in st.session_state: st.session_state.faiss_index = None
 if "indexed_files" not in st.session_state: st.session_state.indexed_files = []
+if "sys_prompt" not in st.session_state: st.session_state.sys_prompt = "Jesteś pomocnym asystentem AI."
 
 def clear_chat():
     st.session_state.messages = []
@@ -105,6 +106,34 @@ def text_to_speech(text, mode):
         st.error(f"Błąd audio: {e}")
         return None
 
+# --- BŁYSKAWICZNY FRAGMENT DLA OSOBOWOŚCI (BEZ LAGA) ---
+@st.fragment
+def render_personality_selector():
+    persona = st.selectbox("Wybierz tryb:", [
+        "Asystent (Standard)", 
+        "Cyberpunk Hacker", 
+        "Ekspert Programowania", 
+        "Sarkastyczny Bot",
+        "Naukowiec",
+        "Własna (Custom)"
+    ], key="persona_selector_widget")
+    
+    persona_prompts = {
+        "Asystent (Standard)": "Jesteś pomocnym asystentem AI.",
+        "Cyberpunk Hacker": "Mów jak haker z przyszłości, używaj technicznego slangu, bądź tajemniczy i neonowy.",
+        "Ekspert Programowania": "Jesteś genialnym programistą. Odpowiadasz czystym kodem i technicznymi konkretami.",
+        "Sarkastyczny Bot": "Jesteś inteligentny, ale bardzo sarkastyczny i nieco znudzony pomaganiem ludziom.",
+        "Naukowiec": "Jesteś profesorem nauk ścisłych. Twoje odpowiedzi są bardzo szczegółowe i oparte na faktach."
+    }
+    
+    if persona == "Własna (Custom)":
+        default_custom = st.session_state.get("custom_prompt_value", "Jesteś pomocnym asystentem AI. Twoje zadanie to...")
+        sys_prompt_input = st.text_area("Wpisz swój własny System Prompt:", value=default_custom, key="custom_prompt_textarea")
+        st.session_state.sys_prompt = sys_prompt_input
+        st.session_state.custom_prompt_value = sys_prompt_input
+    else:
+        st.session_state.sys_prompt = persona_prompts[persona]
+
 # Inicjalizacja zmiennych dla załączników jednorazowych, aby uniknąć błędu NameError
 file_content_to_send = ""
 image_payload = None
@@ -113,34 +142,9 @@ image_payload = None
 with st.sidebar:
     st.markdown("<h2 style='color: #00d4ff;'>🌌 SYSTEM CONTROL</h2>", unsafe_allow_html=True)
     
-# Wybór osobowości
+    # Wybór osobowości za pomocą zoptymalizowanego fragmentu
     with st.expander("🎭 OSOBOWOŚĆ AI", expanded=True):
-        persona = st.selectbox("Wybierz tryb:", [
-            "Asystent (Standard)", 
-            "Cyberpunk Hacker", 
-            "Ekspert Programowania", 
-            "Sarkastyczny Bot",
-            "Naukowiec",
-            "Własna (Custom)"
-        ])
-        
-        persona_prompts = {
-            "Asystent (Standard)": "Jesteś pomocnym asystentem AI.",
-            "Cyberpunk Hacker": "Mów jak haker z przyszłości, używaj technicznego slangu, bądź tajemniczy i neonowy.",
-            "Ekspert Programowania": "Jesteś genialnym programistą. Odpowiadasz czystym kodem i technicznymi konkretami.",
-            "Sarkastyczny Bot": "Jesteś inteligentny, ale bardzo sarkastyczny i nieco znudzony pomaganiem ludziom.",
-            "Naukowiec": "Jesteś profesorem nauk ścisłych. Twoje odpowiedzi są bardzo szczegółowe i oparte na faktach."
-        }
-        
-        # Warunek: Jeśli użytkownik wybierze "Własna (Custom)"
-        if persona == "Własna (Custom)":
-            sys_prompt = st.text_area(
-                "Wpisz swój własny System Prompt:", 
-                value="Jesteś pomocnym asystentem AI. Twoje zadanie to..."
-            )
-        else:
-            # Dla gotowych osobowości przypisujemy prompt w tle i ukrywamy okienko
-            sys_prompt = persona_prompts[persona]
+        render_personality_selector()
 
     # Parametry modelu
     with st.expander("🛠️ PARAMETRY SILNIKA"):
@@ -158,7 +162,6 @@ with st.sidebar:
                 image_payload = {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{img_b64}"}}
                 st.image(uploaded_file, caption="Załadowano obraz do analizy")
             elif f_type == 'pdf':
-                # Używamy Twojego docloader do wyciągnięcia tekstu z pojedynczego PDF
                 file_content_to_send = docloader.load_pdf_from_stream(uploaded_file)
                 st.caption("✅ Wyciągnięto tekst z pliku PDF")
             elif f_type == 'txt':
@@ -173,11 +176,9 @@ with st.sidebar:
                 with st.spinner("Przetwarzanie dokumentów i budowanie indeksu FAISS..."):
                     documents = []
                     for f in rag_files:
-                        # Odczyt tekstu przy użyciu docloader
                         text = docloader.load_pdf_from_stream(f)
                         documents.append({"filename": f.name, "text": text})
                     
-                    # Tworzenie bazy wektorowej przy użyciu embedder_rag
                     index_obj = embedder_rag.create_index(documents)
                     if index_obj:
                         st.session_state.faiss_index = index_obj
@@ -229,8 +230,8 @@ if prompt := st.chat_input("Zadaj pytanie systemowi..."):
     with st.chat_message("user", avatar="👤"):
         st.markdown(prompt)
 
-    # Przygotowanie system promptu z panelu bocznego
-    current_sys_prompt = sys_prompt if 'sys_prompt' in locals() else "Jesteś pomocnym asystentem."
+    # Pobieranie system promptu bezpośrednio z zaufanego stanu sesji fragmentu
+    current_sys_prompt = st.session_state.get("sys_prompt", "Jesteś pomocnym asystentem AI.")
     messages_to_send = [{"role": "system", "content": current_sys_prompt}]
     
     # Budowa dynamicznej struktury wiadomości użytkownika (tekst + potencjalne załączniki)
@@ -246,7 +247,6 @@ if prompt := st.chat_input("Zadaj pytanie systemowi..."):
 
     # --- INTEGRACJA PRZESZUKIWANIA BAZY WIEDZY RAG ---
     if st.session_state.faiss_index:
-        # Przeszukujemy bazę wektorową za pomocą Twojego skryptu embedder_rag
         matched_chunks = embedder_rag.retrieve_docs(prompt, st.session_state.faiss_index, k=3)
         if matched_chunks:
             rag_context = "\n\n[ISTOTNE INFORMACJE ZNALEZIONE W BAZIE WIEDZY RAG - Wykorzystaj je do odpowiedzi]:\n"
@@ -284,7 +284,6 @@ if prompt := st.chat_input("Zadaj pytanie systemowi..."):
             
             for chunk in stream:
                 if chunk.choices[0].delta.content:
-                    # Ukrywamy animację ładowania w momencie pojawienia się pierwszego słowa
                     if full_response == "":
                         status_placeholder.empty()
                     
