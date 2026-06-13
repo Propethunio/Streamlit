@@ -78,7 +78,7 @@ st.markdown("""
     /* IDEALNIE RÓWNE I DOPASOWANE SEPARATORY */
     .custom-hr {
         margin-top: 0px !important;
-        margin-bottom: 6px !important;
+        margin-bottom: 15px !important;
         border: 0;
         border-top: 1px solid rgba(0, 212, 255, 0.15);
     }
