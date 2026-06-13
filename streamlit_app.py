@@ -78,16 +78,30 @@ api_key = st.secrets.get("API_KEY", "")
 base_url = st.secrets.get("BASE_URL", "https://api.openai.com/v1")
 client = OpenAI(api_key=api_key, base_url=base_url) if api_key else None
 
-# Inicjalizacja stanów sesji (RAG oraz Czat)
+# --- INICJALIZACJA STANÓW SESJI ---
 if "messages" not in st.session_state: st.session_state.messages = []
 if "total_tokens" not in st.session_state: st.session_state.total_tokens = 0
 if "faiss_index" not in st.session_state: st.session_state.faiss_index = None
 if "indexed_files" not in st.session_state: st.session_state.indexed_files = []
 if "sys_prompt" not in st.session_state: st.session_state.sys_prompt = "Jesteś pomocnym asystentem AI."
+if "reset_key" not in st.session_state: st.session_state.reset_key = 0
 
-def clear_chat():
+def clear_rag_only():
+    """Usuwa wyłącznie bazę wektorową i listę zindeksowanych plików."""
+    st.session_state.faiss_index = None
+    st.session_state.indexed_files = []
+
+def full_factory_reset():
+    """Resetuje absolutnie wszystkie parametry aplikacji do stanu początkowego."""
     st.session_state.messages = []
     st.session_state.total_tokens = 0
+    st.session_state.faiss_index = None
+    st.session_state.indexed_files = []
+    st.session_state.sys_prompt = "Jesteś pomocnym asystentem AI."
+    if "custom_prompt_value" in st.session_state:
+        del st.session_state["custom_prompt_value"]
+    # Zmiana wartości klucza wymusza na Streamlit stworzenie widżetów na nowo z domyślnymi parametrami
+    st.session_state.reset_key += 1
     st.cache_data.clear()
 
 def text_to_speech(text, mode):
@@ -116,7 +130,7 @@ def render_personality_selector():
         "Sarkastyczny Bot",
         "Naukowiec",
         "Własna (Custom)"
-    ], key="persona_selector_widget")
+    ], key=f"persona_selector_{st.session_state.reset_key}")
     
     persona_prompts = {
         "Asystent (Standard)": "Jesteś pomocnym asystentem AI.",
@@ -128,11 +142,11 @@ def render_personality_selector():
     
     if persona == "Własna (Custom)":
         default_custom = st.session_state.get("custom_prompt_value", "Jesteś pomocnym asystentem AI. Twoje zadanie to...")
-        sys_prompt_input = st.text_area("Wpisz swój własny System Prompt:", value=default_custom, key="custom_prompt_textarea")
+        sys_prompt_input = st.text_area("Wpisz swój własny System Prompt:", value=default_custom, key=f"custom_prompt_{st.session_state.reset_key}")
         st.session_state.sys_prompt = sys_prompt_input
         st.session_state.custom_prompt_value = sys_prompt_input
     else:
-        st.session_state.sys_prompt = persona_prompts[persona]
+        st.session_state.sys_prompt = persona_prompts.get(persona, "Jesteś pomocnym asystentem AI.")
 
 # Inicjalizacja zmiennych dla załączników jednorazowych, aby uniknąć błędu NameError
 file_content_to_send = ""
@@ -148,13 +162,13 @@ with st.sidebar:
 
     # Parametry modelu
     with st.expander("🛠️ PARAMETRY SILNIKA"):
-        selected_model = st.selectbox("Model:", ["gemini-2.5-flash", "gemini-2.0-flash", "gpt-4o"])
-        temp = st.slider("Kreatywność", 0.0, 2.0, 0.7, 0.1)
-        tts_mode = st.radio("Silnik TTS:", ["Premium (OpenAI)", "Free (gTTS)"])
+        selected_model = st.selectbox("Model:", ["gemini-2.5-flash", "gemini-2.0-flash", "gpt-4o"], key=f"model_{st.session_state.reset_key}")
+        temp = st.slider("Kreatywność", 0.0, 2.0, 0.7, 0.1, key=f"temp_{st.session_state.reset_key}")
+        tts_mode = st.radio("Silnik TTS:", ["Premium (OpenAI)", "Free (gTTS)"], key=f"tts_{st.session_state.reset_key}")
 
     # 1. JEDNORAZOWE ZAŁĄCZNIKI (Dla bieżącej wiadomości)
     with st.expander("📂 JEDNORAZOWY ZAŁĄCZNIK"):
-        uploaded_file = st.file_uploader("Plik (PDF/IMG/TXT)", type=['txt', 'pdf', 'png', 'jpg', 'jpeg'], key="single_file")
+        uploaded_file = st.file_uploader("Plik (PDF/IMG/TXT)", type=['txt', 'pdf', 'png', 'jpg', 'jpeg'], key=f"single_file_{st.session_state.reset_key}")
         if uploaded_file:
             f_type = uploaded_file.name.split('.')[-1].lower()
             if f_type in ['png', 'jpg', 'jpeg']:
@@ -170,7 +184,7 @@ with st.sidebar:
 
     # 2. TRWAŁA BAZA WIEDZY RAG (Wyszukiwanie FAISS w wielu plikach na raz)
     with st.expander("📚 TRWAŁA BAZA WIEDZY RAG (MULTI-PDF)"):
-        rag_files = st.file_uploader("Wgraj dokumenty PDF do bazy wiedzy", type=['pdf'], accept_multiple_files=True, key="rag_files")
+        rag_files = st.file_uploader("Wgraj dokumenty PDF do bazy wiedzy", type=['pdf'], accept_multiple_files=True, key=f"rag_files_{st.session_state.reset_key}")
         if rag_files:
             if st.button("🚀 INICJALIZUJ BAZĘ RAG", use_container_width=True):
                 with st.spinner("Przetwarzanie dokumentów i budowanie indeksu FAISS..."):
@@ -192,14 +206,21 @@ with st.sidebar:
             for name in st.session_state.indexed_files:
                 st.caption(f"• {name}")
 
-    # Przycisk resetu
-    if st.button("🗑️ RESETUJ WSZYSTKO", use_container_width=True):
-        clear_chat()
-        st.session_state.faiss_index = None
-        st.session_state.indexed_files = []
+    # --- SEKCJA ZARZĄDZANIA RESETAMI ---
+    st.markdown("---")
+    
+    # Przycisk 1: Czyszczenie samej bazy RAG
+    if st.button("🗑️ WYCZYŚĆ BAZĘ WIEDZY RAG", use_container_width=True):
+        clear_rag_only()
+        st.success("Baza RAG została wyczyszczona!")
+        st.rerun()
+        
+    # Przycisk 2: Główny, pełny reset systemu
+    if st.button("🚨 CAŁKOWITY RESET SYSTEMU", use_container_width=True, type="primary"):
+        full_factory_reset()
         st.rerun()
 
-    # Licznik tokenów
+    # Licznik tokenów i statystyki
     st.markdown(f"""
         <div class="token-counter">
             📊 STATYSTYKI SESJI:<br>
