@@ -113,14 +113,15 @@ image_payload = None
 with st.sidebar:
     st.markdown("<h2 style='color: #00d4ff;'>🌌 SYSTEM CONTROL</h2>", unsafe_allow_html=True)
     
-    # Wybór osobowości
+# Wybór osobowości
     with st.expander("🎭 OSOBOWOŚĆ AI", expanded=True):
         persona = st.selectbox("Wybierz tryb:", [
             "Asystent (Standard)", 
             "Cyberpunk Hacker", 
             "Ekspert Programowania", 
             "Sarkastyczny Bot",
-            "Naukowiec"
+            "Naukowiec",
+            "Własna (Custom)"
         ])
         
         persona_prompts = {
@@ -130,7 +131,16 @@ with st.sidebar:
             "Sarkastyczny Bot": "Jesteś inteligentny, ale bardzo sarkastyczny i nieco znudzony pomaganiem ludziom.",
             "Naukowiec": "Jesteś profesorem nauk ścisłych. Twoje odpowiedzi są bardzo szczegółowe i oparte na faktach."
         }
-        sys_prompt = st.text_area("System Prompt (Custom):", persona_prompts[persona])
+        
+        # Warunek: Jeśli użytkownik wybierze "Własna (Custom)"
+        if persona == "Własna (Custom)":
+            sys_prompt = st.text_area(
+                "Wpisz swój własny System Prompt:", 
+                value="Jesteś pomocnym asystentem AI. Twoje zadanie to..."
+            )
+        else:
+            # Dla gotowych osobowości przypisujemy prompt w tle i ukrywamy okienko
+            sys_prompt = persona_prompts[persona]
 
     # Parametry modelu
     with st.expander("🛠️ PARAMETRY SILNIKA"):
