@@ -70,7 +70,6 @@ st.markdown("""
         background: rgba(255, 255, 255, 0.02) !important;
         border: 1px solid rgba(0, 212, 255, 0.1) !important;
         border-radius: 10px !important;
-        margin-bottom: 0px !important;
     }
     [data-testid="stSidebar"] p {
         color: #b4c6ef !important;
@@ -79,7 +78,7 @@ st.markdown("""
     /* IDEALNIE RÓWNE I DOPASOWANE SEPARATORY */
     .custom-hr {
         margin-top: 0px !important;
-        margin-bottom: 0px !important;
+        margin-bottom: 6px !important;
         border: 0;
         border-top: 1px solid rgba(0, 212, 255, 0.15);
     }
