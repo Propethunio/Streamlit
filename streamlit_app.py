@@ -176,7 +176,7 @@ image_payload = None
 
 # --- SIDEBAR (Panel boczny) ---
 with st.sidebar:
-    st.markdown("<h2 style='color: #00d4ff; margin-bottom: 20px; font-weight:800; letter-spacing:1px;'>🌌 SYSTEM CONTROL</h2>", unsafe_allow_html=True)
+    st.markdown("<h2 style='color: #00d4ff; margin-bottom: 2px; font-weight:800; letter-spacing:2px;'>🌌 SYSTEM CONTROL</h2>", unsafe_allow_html=True)
     
     # Wybór osobowości za pomocą zoptymalizowanego fragmentu
     with st.expander("🎭 OSOBOWOŚĆ AI", expanded=True):
