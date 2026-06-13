@@ -74,6 +74,25 @@ st.markdown("""
     [data-testid="stSidebar"] p {
         color: #b4c6ef !important;
     }
+            
+    /* FIX KONTRASTU DLA CZERWONEGO PRZYCISKU SYSTEMOWEGO */
+    [data-testid="stSidebar"] button[kind="primary"] {
+        background-color: #ff2a5f !important;
+        border: 1px solid #ff003c !important;
+        box-shadow: 0 0 10px rgba(255, 42, 95, 0.2) !important;
+    }
+
+    /* Wymuszenie białego i pogrubionego tekstu wewnątrz przycisku */
+    [data-testid="stSidebar"] button[kind="primary"] p {
+        color: #ffffff !important;
+        font-weight: 700 !important;
+    }
+
+    /* Efekt po najechaniu myszką (hover) */
+    [data-testid="stSidebar"] button[kind="primary"]:hover {
+        background-color: #ff003c !important;
+        box-shadow: 0 0 15px rgba(255, 42, 95, 0.5) !important;
+    }
     
     /* IDEALNIE RÓWNE I DOPASOWANE SEPARATORY */
     .custom-hr {
