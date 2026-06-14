@@ -296,7 +296,7 @@ else:
             # Precyzyjny regex łapiący bloki opcji A), B), C) od nowej linii
             found_options = re.findall(r"(?m)^([A-C])\)\s*(.+)$", last_reply)
             if found_options:
-                options = [f"{opt[0]}: {opt[1].strip()}" for opt in found_options]
+                options = [opt[1].strip() for opt in found_options]
                 
                 # Usuwamy całą sekcję opcji z tekstu, żeby nie dublować ich na ekranie
                 clean_last_reply = re.sub(r"(?m)^[A-C]\)\s*.+$", "", last_reply).strip()
