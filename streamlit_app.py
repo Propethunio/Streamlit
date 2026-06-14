@@ -6,9 +6,11 @@ from gtts import gTTS
 import io
 from datetime import datetime
 
-# Importy Twoich dwóch nowych modułów
+# Importy Twoich modułów (RAG + Nowe moduły gry RPG)
 import docloader
 import embedder_rag
+import rpg_database
+import rpg_visuals
 
 # --- KONFIGURACJA STRONY ---
 st.set_page_config(
@@ -17,7 +19,7 @@ st.set_page_config(
     page_icon="🌌"
 )
 
-# --- ZAAWANSOWANY CSS (Z MODYFIKACJĄ PANELU BOCZNEGO) ---
+# --- ZAAWANSOWANY CSS (Z MODYFIKACJĄ PANELU BOCZNEGO I ZAKŁADEK) ---
 st.markdown("""
     <style>
     @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
@@ -61,6 +63,37 @@ st.markdown("""
         margin-top: -40px;
     }
     
+    /* STYLIZACJA ZAKŁADEK (TABS) */
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 12px;
+        justify-content: center;
+    }
+    .stTabs [data-baseweb="tab"] {
+        background-color: rgba(255, 255, 255, 0.02) !important;
+        border: 1px solid rgba(0, 212, 255, 0.1) !important;
+        padding: 10px 24px !important;
+        border-radius: 8px 8px 0px 0px !important;
+        color: #b4c6ef !important;
+        font-weight: 600;
+    }
+    .stTabs [aria-selected="true"] {
+        background-color: rgba(0, 212, 255, 0.08) !important;
+        border-color: #00d4ff !important;
+        color: #00d4ff !important;
+        box-shadow: 0 0 10px rgba(0, 212, 255, 0.2);
+    }
+
+    /* KARTA STYLIZACJI POSTACI RPG W SIDEBARZE */
+    .rpg-card {
+        background: rgba(138, 43, 226, 0.06);
+        border: 1px solid rgba(138, 43, 226, 0.3);
+        padding: 14px;
+        border-radius: 10px;
+        margin-bottom: 12px;
+        font-size: 14px;
+        line-height: 1.5;
+    }
+    
     /* STYLIZACJA PANELU BOCZNEGO */
     [data-testid="stSidebar"] {
         background-color: #080911 !important;
@@ -70,6 +103,7 @@ st.markdown("""
         background: rgba(255, 255, 255, 0.02) !important;
         border: 1px solid rgba(0, 212, 255, 0.1) !important;
         border-radius: 10px !important;
+        margin-bottom: 12px !important;
     }
     [data-testid="stSidebar"] p {
         color: #b4c6ef !important;
@@ -81,14 +115,10 @@ st.markdown("""
         border: 1px solid #ff003c !important;
         box-shadow: 0 0 10px rgba(255, 42, 95, 0.2) !important;
     }
-
-    /* Wymuszenie białego i pogrubionego tekstu wewnątrz przycisku */
     [data-testid="stSidebar"] button[kind="primary"] p {
         color: #ffffff !important;
         font-weight: 700 !important;
     }
-
-    /* Efekt po najechaniu myszką (hover) */
     [data-testid="stSidebar"] button[kind="primary"]:hover {
         background-color: #ff003c !important;
         box-shadow: 0 0 15px rgba(255, 42, 95, 0.5) !important;
@@ -121,6 +151,8 @@ client = OpenAI(api_key=api_key, base_url=base_url) if api_key else None
 
 # --- INICJALIZACJA STANÓW SESJI ---
 if "messages" not in st.session_state: st.session_state.messages = []
+if "rpg_messages" not in st.session_state: st.session_state.rpg_messages = []
+if "last_rpg_image" not in st.session_state: st.session_state.last_rpg_image = None
 if "total_tokens" not in st.session_state: st.session_state.total_tokens = 0
 if "faiss_index" not in st.session_state: st.session_state.faiss_index = None
 if "indexed_files" not in st.session_state: st.session_state.indexed_files = []
@@ -133,8 +165,10 @@ def clear_rag_only():
     st.session_state.indexed_files = []
 
 def full_factory_reset():
-    """Resetuje absolutnie wszystkie parametry aplikacji do stanu początkowego."""
+    """Resetuje parametry aplikacji oraz stany gry RPG do stanu początkowego."""
     st.session_state.messages = []
+    st.session_state.rpg_messages = []
+    st.session_state.last_rpg_image = None
     st.session_state.total_tokens = 0
     st.session_state.faiss_index = None
     st.session_state.indexed_files = []
@@ -163,7 +197,7 @@ def text_to_speech(text, mode):
 # --- BŁYSKAWICZNY FRAGMENT DLA OSOBOWOŚCI (BEZ LAGA) ---
 @st.fragment
 def render_personality_selector():
-    persona = st.selectbox("Wybierz tryb:", [
+    persona = st.selectbox("Wybierz tryb (Dla klasycznego chatu):", [
         "Asystent (Standard)", 
         "Cyberpunk Hacker", 
         "Ekspert Programowania", 
@@ -188,16 +222,36 @@ def render_personality_selector():
     else:
         st.session_state.sys_prompt = persona_prompts.get(persona, "Jesteś pomocnym asystentem AI.")
 
-# Inicjalizacja zmiennych dla załączników jednorazowych, aby uniknąć błędu NameError
+# Inicjalizacja zmiennych dla załączników jednorazowych
 file_content_to_send = ""
 image_payload = None
 
-# --- SIDEBAR (Panel boczny) ---
+# --- SIDEBAR (Panel boczny - Wspólny dla obu modułów) ---
 with st.sidebar:
     st.markdown("<h2 style='color: #00d4ff; margin-bottom: 2px; font-weight:800; letter-spacing:2px;'>🌌 SYSTEM CONTROL</h2>", unsafe_allow_html=True)
     
-    # Wybór osobowości za pomocą zoptymalizowanego fragmentu
-    with st.expander("🎭 OSOBOWOŚĆ AI", expanded=True):
+    # KARTA AKTYWNEGO BOHATERA RPG (Zaciągana na żywo z SQLite)
+    character = rpg_database.get_character()
+    if character:
+        st.markdown(f"""
+            <div class="rpg-card">
+                <b style="color: #ff00c8;">👤 BOHATER:</b> {character['name']}<br>
+                <b style="color: #8a2be2;">🎭 KLASA:</b> {character['class']}<br>
+                <b style="color: #00d4ff;">❤️ PUNKTY ŻYCIA:</b> {character['hp']}/{character['max_hp']}<br>
+                <b style="color: #ffd700;">💰 ZŁOTO:</b> {character['gold']} szt.<br>
+                <b style="color: #00ffcc;">📍 LOKACJA:</b> {character['location']}
+            </div>
+        """, unsafe_allow_html=True)
+        
+        # Wyświetlanie listy przedmiotów z bazy danych
+        items = rpg_database.get_inventory()
+        if items:
+            with st.expander("🎒 EKWIPUNEK POSTACI", expanded=False):
+                for it in items:
+                    st.caption(f"• {it['name']} ({it['type']}) x{it['qty']}")
+
+    # Wybór osobowości dla tradycyjnego chatu
+    with st.expander("🎭 OSOBOWOŚĆ AI", expanded=False):
         render_personality_selector()
 
     # Parametry modelu
@@ -206,7 +260,7 @@ with st.sidebar:
         temp = st.slider("Kreatywność", 0.0, 2.0, 0.7, 0.1, key=f"temp_{st.session_state.reset_key}")
         tts_mode = st.radio("Silnik TTS:", ["Premium (OpenAI)", "Free (gTTS)"], key=f"tts_{st.session_state.reset_key}")
 
-    # 1. JEDNORAZOWE ZAŁĄCZNIKI (Dla bieżącej wiadomości)
+    # 1. JEDNORAZOWE ZAŁĄCZNIKI (Dla tradycyjnego bota)
     with st.expander("📂 JEDNORAZOWY ZAŁĄCZNIK"):
         uploaded_file = st.file_uploader("Plik (PDF/IMG/TXT)", type=['txt', 'pdf', 'png', 'jpg', 'jpeg'], key=f"single_file_{st.session_state.reset_key}")
         if uploaded_file:
@@ -222,7 +276,7 @@ with st.sidebar:
                 file_content_to_send = uploaded_file.read().decode("utf-8")
                 st.caption("✅ Załadowano plik tekstowy")
 
-    # 2. TRWAŁA BAZA WIEDZY RAG (Wyszukiwanie FAISS w wielu plikach na raz)
+    # 2. TRWAŁA BAZA WIEDZY RAG
     with st.expander("📚 TRWAŁA BAZA WIEDZY RAG (MULTI-PDF)"):
         rag_files = st.file_uploader("Wgraj dokumenty PDF do bazy wiedzy", type=['pdf'], accept_multiple_files=True, key=f"rag_files_{st.session_state.reset_key}")
         if rag_files:
@@ -249,18 +303,15 @@ with st.sidebar:
     # --- SEKCJA ZARZĄDZANIA RESETAMI ---
     st.markdown('<hr class="custom-hr">', unsafe_allow_html=True)
     
-    # Przycisk 1: Czyszczenie samej bazy RAG
     if st.button("🗑️ WYCZYŚĆ BAZĘ WIEDZY RAG", use_container_width=True):
         clear_rag_only()
         st.success("Baza RAG została wyczyszczona!")
         st.rerun()
         
-    # Przycisk 2: Główny, pełny reset systemu
     if st.button("🚨 CAŁKOWITY RESET SYSTEMU", use_container_width=True, type="primary"):
         full_factory_reset()
         st.rerun()
 
-    # Druga, nowa linia separatora umieszczona dokładnie nad statystykami sesji
     st.markdown('<hr class="custom-hr">', unsafe_allow_html=True)
 
     # Licznik tokenów i statystyki
@@ -272,97 +323,162 @@ with st.sidebar:
         </div>
     """, unsafe_allow_html=True)
 
-# --- GŁÓWNY INTERFEJS ---
-st.markdown('<h1 class="big-title">NEON GEMINI RAG PRO</h1>', unsafe_allow_html=True)
+# --- GŁÓWNY INTERFEJS Z PODZIAŁEM NA TABY ---
+st.markdown('<h1 class="big-title">NEON GEMINI SYSTEM</h1>', unsafe_allow_html=True)
 
-# Wyświetlanie historii czatu
-for i, msg in enumerate(st.session_state.messages):
-    with st.chat_message(msg["role"], avatar="👤" if msg["role"]=="user" else "🌌"):
-        st.markdown(msg["content"])
-        if msg["role"] == "assistant" and st.button(f"🔊 Odsłuchaj", key=f"tts_{i}"):
-            html = text_to_speech(msg["content"], tts_mode)
-            if html: st.markdown(html, unsafe_allow_html=True)
+tab_chat, tab_rpg = st.tabs(["💬 ASYSTENT & RAG CHAT", "🎮 MISTRZ GRY RPG"])
 
-# --- LOGIKA CZATU Z PEŁNĄ INTEGRACJĄ RAG ORAZ ZAŁĄCZNIKÓW ---
-if prompt := st.chat_input("Zadaj pytanie systemowi..."):
-    if not api_key:
-        st.error("Błąd: Skonfiguruj klucz API!")
-        st.stop()
+# =====================================================================
+# ZAKŁADKA 1: KLASYCZNY CHATBOT (KOD KTÓRY MIAŁEŚ DO TEJ PORY)
+# =====================================================================
+with tab_chat:
+    # Wyświetlanie historii czatu tradycyjnego
+    for i, msg in enumerate(st.session_state.messages):
+        with st.chat_message(msg["role"], avatar="👤" if msg["role"]=="user" else "🌌"):
+            st.markdown(msg["content"])
+            if msg["role"] == "assistant" and st.button(f"🔊 Odsłuchaj", key=f"tts_chat_{i}"):
+                html = text_to_speech(msg["content"], tts_mode)
+                if html: st.markdown(html, unsafe_allow_html=True)
 
-    # Dodanie wiadomości użytkownika do sesji i wyświetlenie jej na ekranie
-    st.session_state.messages.append({"role": "user", "content": prompt})
-    with st.chat_message("user", avatar="👤"):
-        st.markdown(prompt)
+    # Logika wejściowa klasycznego czatu
+    if prompt := st.chat_input("Zadaj pytanie asystentowi...", key="chat_input_field"):
+        if not api_key:
+            st.error("Błąd: Skonfiguruj klucz API!")
+            st.stop()
 
-    # Pobieranie system promptu bezpośrednio z zaufanego stanu sesji fragmentu
-    current_sys_prompt = st.session_state.get("sys_prompt", "Jesteś pomocnym asystentem AI.")
-    messages_to_send = [{"role": "system", "content": current_sys_prompt}]
-    
-    # Budowa dynamicznej struktury wiadomości użytkownika (tekst + potencjalne załączniki)
-    user_content = [{"type": "text", "text": prompt}]
-    
-    # Jeśli użytkownik dodał jednorazowy plik (TXT/PDF)
-    if file_content_to_send:
-        user_content.append({"type": "text", "text": f"\n\n[DODATKOWY KONTEKST Z ZAŁĄCZONEGO PLIKU]:\n{file_content_to_send}"})
-    
-    # Jeśli użytkownik dodał jednorazowy obrazek
-    if image_payload:
-        user_content.append(image_payload)
-
-    # --- INTEGRACJA PRZESZUKIWANIA BAZY WIEDZY RAG ---
-    if st.session_state.faiss_index:
-        matched_chunks = embedder_rag.retrieve_docs(prompt, st.session_state.faiss_index, k=3)
-        if matched_chunks:
-            rag_context = "\n\n[ISTOTNE INFORMACJE ZNALEZIONE W BAZIE WIEDZY RAG - Wykorzystaj je do odpowiedzi]:\n"
-            for chunk in matched_chunks:
-                rag_context += f"- (Źródło: {chunk['filename']}): \"{chunk['text']}\"\n"
-            user_content.append({"type": "text", "text": rag_context})
-
-    # Ładowanie historii (ostatnie 10 wiadomości) bez aktualnego promptu
-    for m in st.session_state.messages[-11:-1]:
-        messages_to_send.append(m)
-    
-    # Dodanie na sam koniec aktualnej wiadomości użytkownika z kompletem danych (Prompt + Załącznik + RAG)
-    messages_to_send.append({"role": "user", "content": user_content})
-
-    # Odpowiedź asystenta w trybie Stream z animacją "Thinking"
-    with st.chat_message("assistant", avatar="🌌"):
-        status_placeholder = st.empty()
-        status_placeholder.markdown("""
-            <div class="thinking-box">
-                <div class="loader"></div>
-                <span>PRZETWARZANIE DANYCH (RAG SEMANTIC SEARCH)...</span>
-            </div>
-        """, unsafe_allow_html=True)
+        st.session_state.messages.append({"role": "user", "content": prompt})
         
-        response_placeholder = st.empty()
-        full_response = ""
+        current_sys_prompt = st.session_state.get("sys_prompt", "Jesteś pomocnym asystentem AI.")
+        messages_to_send = [{"role": "system", "content": current_sys_prompt}]
+        user_content = [{"type": "text", "text": prompt}]
+        
+        if file_content_to_send:
+            user_content.append({"type": "text", "text": f"\n\n[DODATKOWY KONTEKST Z ZAŁĄCZONEGO PLIKU]:\n{file_content_to_send}"})
+        if image_payload:
+            user_content.append(image_payload)
 
-        try:
-            stream = client.chat.completions.create(
-                model=selected_model,
-                messages=messages_to_send,
-                temperature=temp,
-                stream=True
+        if st.session_state.faiss_index:
+            matched_chunks = embedder_rag.retrieve_docs(prompt, st.session_state.faiss_index, k=3)
+            if matched_chunks:
+                rag_context = "\n\n[ISTOTNE INFORMACJE ZNALEZIONE W BAZIE WIEDZY RAG]:\n"
+                for chunk in matched_chunks:
+                    rag_context += f"- (Źródło: {chunk['filename']}): \"{chunk['text']}\"\n"
+                user_content.append({"type": "text", "text": rag_context})
+
+        for m in st.session_state.messages[-11:-1]:
+            messages_to_send.append(m)
+        
+        messages_to_send.append({"role": "user", "content": user_content})
+
+        with st.chat_message("assistant", avatar="🌌"):
+            status_placeholder = st.empty()
+            status_placeholder.markdown('<div class="thinking-box"><div class="loader"></div><span>PRZETWARZANIE DANYCH...</span></div>', unsafe_allow_html=True)
+            
+            response_placeholder = st.empty()
+            full_response = ""
+
+            try:
+                stream = client.chat.completions.create(
+                    model=selected_model,
+                    messages=messages_to_send,
+                    temperature=temp,
+                    stream=True
+                )
+                for chunk in stream:
+                    if chunk.choices[0].delta.content:
+                        status_placeholder.empty()
+                        full_response += chunk.choices[0].delta.content
+                        response_placeholder.markdown(full_response + "▌")
+                
+                response_placeholder.markdown(full_response)
+                st.session_state.messages.append({"role": "assistant", "content": full_response})
+                st.session_state.total_tokens += (len(prompt) + len(full_response)) // 4
+                st.rerun()
+            except Exception as e:
+                status_placeholder.empty()
+                st.error(f"Wystąpił błąd silnika LLM: {str(e)}")
+
+# =====================================================================
+# ZAKŁADKA 2: NOWA FUNKCJONALNOŚĆ - MISTRZ GRY RPG
+# =====================================================================
+with tab_rpg:
+    st.markdown("<h2 style='color: #8a2be2;'>🧙‍♂️ Cyfrowy Mistrz Gry (RPG Engine)</h2>", unsafe_allow_html=True)
+    
+    # Jeśli w bazie nie ma aktywnego bohatera, renderujemy ekran tworzenia postaci
+    if not character:
+        st.info("Brak aktywnego bohatera w bazie danych. Stwórz swoją postać, aby rozpocząć kampanię!")
+        c1, c2 = st.columns(2)
+        with c1:
+            hero_name = st.text_input("Imię Twojej postaci:", value="Kaelen")
+        with c2:
+            hero_class = st.selectbox("Wybierz archetyp klasy:", ["Netrunner Cyber-Haker", "Zwiadowca Pustkowi", "Technomanta Neonu", "Uliczny Wojownik"])
+            
+        if st.button("🌌 ROZPOCZNIJ PRZYGODĘ & ZAPISZ W BAZIE", use_container_width=True):
+            rpg_database.create_character(hero_name, hero_class)
+            st.session_state.rpg_messages = [{"role": "assistant", "content": f"Witaj, {hero_name} ({hero_class}). Budzisz się w mrocznym, skąpanym w deszczu i neonach zaułku sektora 7. W dłoni ściskasz uszkodzony cyber-dek, a z dachu nad Tobą kapie syntetyczny płyn. Słyszysz zbliżające się kroki ciężkich buciorów korporacyjnych strażników. Co robisz?"}]
+            st.success("Postać zapisana pomyślnie! Przygoda rozpoczęta.")
+            st.rerun()
+    else:
+        # Wyświetlanie aktualnej sceny graficznej wygenerowanej przez DALL-E 3
+        if st.session_state.last_rpg_image:
+            st.image(st.session_state.last_rpg_image, caption=f"Aktualna lokacja: {character['location']}", use_container_width=True)
+
+        # Renderowanie historii fabularnej
+        for msg in st.session_state.rpg_messages:
+            with st.chat_message(msg["role"], avatar="👤" if msg["role"]=="user" else "🧙‍♂️"):
+                st.markdown(msg["content"])
+
+        # Akcja gracza
+        if rpg_prompt := st.chat_input("Zadeklaruj swoją akcję mistrzowi gry...", key="rpg_input_field"):
+            st.session_state.rpg_messages.append({"role": "user", "content": rpg_prompt})
+            
+            # Dedykowany prompt systemowy dla Mistrza Gry RPG
+            rpg_system_prompt = (
+                f"Jesteś profesjonalnym Mistrzem Gry RPG prowadzącym mroczną sesję sci-fi/cyberpunk. "
+                f"Gracz steruje postacią o imieniu {character['name']} (Klasa: {character['class']}). "
+                "Opisuj barwnie konsekwencje akcji gracza, rozwijaj fabułę i buduj klimat neonowego zagrożenia. "
+                "Na końcu każdej wypowiedzi zaproponuj graczowi 3 krótkie, klimatyczne opcje ruchu (np. A, B, C)."
             )
             
-            for chunk in stream:
-                if chunk.choices[0].delta.content:
-                    if full_response == "":
-                        status_placeholder.empty()
-                    
-                    full_response += chunk.choices[0].delta.content
-                    response_placeholder.markdown(full_response + "▌")
-            
-            response_placeholder.markdown(full_response)
-            
-            # Zapisanie odpowiedzi do historii i aktualizacja licznika tokenów
-            st.session_state.messages.append({"role": "assistant", "content": full_response})
-            st.session_state.total_tokens += (len(prompt) + len(full_response)) // 4
-            st.rerun()
+            rpg_messages_to_send = [{"role": "system", "content": rpg_system_prompt}]
+            for m in st.session_state.rpg_messages:
+                rpg_messages_to_send.append(m)
 
-        except Exception as e:
-            status_placeholder.empty()
-            st.error(f"Wystąpił błąd silnika LLM: {str(e)}")
+            with st.chat_message("assistant", avatar="🧙‍♂️"):
+                status = st.empty()
+                status.markdown('<div class="thinking-box"><div class="loader"></div><span>Mistrz Gry kształtuje świat...</span></div>', unsafe_allow_html=True)
+                
+                response_placeholder = st.empty()
+                full_rpg_response = ""
+                
+                # Stream narracji MG
+                stream = client.chat.completions.create(
+                    model=selected_model,
+                    messages=rpg_messages_to_send,
+                    temperature=temp,
+                    stream=True
+                )
+                for chunk in stream:
+                    if chunk.choices[0].delta.content:
+                        status.empty()
+                        full_rpg_response += chunk.choices[0].delta.content
+                        response_placeholder.markdown(full_rpg_response + "▌")
+                
+                response_placeholder.markdown(full_rpg_response)
+                st.session_state.rpg_messages.append({"role": "assistant", "content": full_rpg_response})
+                
+                # AUTOMATYCZNE GENEROWANIE ADEKWATNYCH WIZUALIÓW
+                with st.spinner("🖼️ Wizualizowanie lokacji przez DALL-E 3..."):
+                    img_url = rpg_visuals.generate_game_scene(client, full_rpg_response)
+                    if img_url:
+                        st.session_state.last_rpg_image = img_url
+                
+                # Dynamiczna symulacja i uaktualnienie bazy danych po ruchu
+                # Zmniejszamy losowo HP (symulacja zmęczenia/walki) i dodajemy 2 kredyty/złoto
+                next_hp = max(5, character['hp'] - 3)
+                next_gold = character['gold'] + 2
+                rpg_database.update_game_state(next_hp, next_gold, "Sektor Widmo", full_rpg_response[:120])
+                
+                st.rerun()
 
-st.markdown("""<div style="text-align: center; opacity: 0.2; font-size: 10px;">NEON ENGINE V3.5 | MODULAR RAG ACTIVE</div>""", unsafe_allow_html=True)
+st.markdown("""<div style="text-align: center; opacity: 0.2; font-size: 10px; margin-top: 50px;">NEON ENGINE V3.5 | MODULAR RAG ACTIVE</div>""", unsafe_allow_html=True)
