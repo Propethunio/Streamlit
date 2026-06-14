@@ -147,7 +147,12 @@ def call_rpg_ai(client, model, temp, messages):
     tool_calls = response_message.tool_calls
 
     if not tool_calls:
-        return response_message.content
+        return response_message.content or ""
+
+    # Gemini często umieszcza narrację w content pierwszej odpowiedzi,
+    # a po przetworzeniu tool calls zwraca tylko opcje (lub None).
+    # Łączymy oba fragmenty, żeby nie zgubić narracji.
+    first_content = (response_message.content or "").strip()
 
     messages.append(response_message)
     for tool_call in tool_calls:
@@ -164,4 +169,7 @@ def call_rpg_ai(client, model, temp, messages):
     second_response = client.chat.completions.create(
         model=model, messages=messages, temperature=temp
     )
-    return second_response.choices[0].message.content
+    second_content = (second_response.choices[0].message.content or "").strip()
+
+    parts = [p for p in [first_content, second_content] if p]
+    return "\n\n".join(parts)

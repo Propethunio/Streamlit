@@ -120,6 +120,9 @@ def _process_active_action(client, model, temp):
         try:
             full_response = call_rpg_ai(client, model, temp, send_messages)
             status.empty()
+            if not full_response:
+                st.error("Mistrz Gry zwrócił pustą odpowiedź. Spróbuj ponownie.")
+                return
             st.markdown(full_response)
         except Exception as e:
             status.empty()
