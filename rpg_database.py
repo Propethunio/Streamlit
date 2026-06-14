@@ -30,7 +30,7 @@ def init_db():
         )
     """)
 
-    # 3. NOWA TABELA: Historia czatu RPG (do zapamiętywania kampanii)
+    # 3. Historia czatu RPG
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS rpg_chat_history (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -66,27 +66,15 @@ def create_character(name, char_class):
     cursor = conn.cursor()
     cursor.execute("DELETE FROM character_stats")
     cursor.execute("DELETE FROM inventory")
-    cursor.execute("DELETE FROM rpg_chat_history") # Reset historii przy nowej postaci
+    cursor.execute("DELETE FROM rpg_chat_history")
     
     cursor.execute("""
         INSERT INTO character_stats (name, character_class, hp, max_hp, gold, current_location, story_summary)
-        VALUES (?, ?, 100, 100, 15, 'Sektor 7 - Zaułek', 'Budzisz się w deszczu...')
+        VALUES (?, ?, 100, 100, 50, 'Sektor 7 - Zaułek', 'Budzisz się w deszczu...')
     """, (name, char_class))
     
-    cursor.execute("INSERT INTO inventory (item_name, item_type) VALUES ('Ostrze Monomolekularne', 'broń')")
-    cursor.execute("INSERT INTO inventory (item_name, item_type) VALUES ('Stymulant Bojowy', 'medykament')")
+    cursor.execute("INSERT INTO inventory (item_name, item_type, quantity) VALUES ('Uszkodzony Cyber-dek', 'narzędzie', 1)")
     
-    conn.commit()
-    conn.close()
-
-def update_game_state(hp, gold, location, summary):
-    conn = sqlite3.connect(DB_NAME)
-    cursor = conn.cursor()
-    cursor.execute("""
-        UPDATE character_stats 
-        SET hp = ?, gold = ?, current_location = ?, story_summary = ?
-        WHERE id = (SELECT id FROM character_stats ORDER BY id DESC LIMIT 1)
-    """, (hp, gold, location, summary))
     conn.commit()
     conn.close()
 
@@ -98,10 +86,70 @@ def get_inventory():
     conn.close()
     return [{"name": r[0], "type": r[1], "qty": r[2]} for r in rows]
 
-# --- NOWE FUNKCJE OBSŁUGI TRWAŁEJ HISTORII CZATU ---
+# --- ZAAWANSOWANE FUNKCJE DLA ASYSTENTA AI ---
+
+def modify_stats(hp_change=0, gold_change=0, new_location=None, summary=""):
+    """Pozwala AI na zmianę zdrowia, złota i lokacji bohatera (wartości relatywne)"""
+    char = get_character()
+    if not char:
+        return "Błąd: Postać nie istnieje."
+    
+    new_hp = max(0, min(char['max_hp'], char['hp'] + hp_change))
+    new_gold = max(0, char['gold'] + gold_change)
+    loc = new_location if new_location else char['location']
+    sum_text = summary if summary else char['summary']
+    
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    cursor.execute("""
+        UPDATE character_stats 
+        SET hp = ?, gold = ?, current_location = ?, story_summary = ?
+        WHERE id = ?
+    """, (new_hp, new_gold, loc, sum_text, char['id']))
+    conn.commit()
+    conn.close()
+    return f"Zaktualizowano postać. Nowe HP: {new_hp}, Nowe Złoto: {new_gold}, Lokacja: {loc}"
+
+def add_inventory_item(item_name, item_type="przedmiot", quantity=1):
+    """Pozwala AI na dodawanie przedmiotów lub zwiększanie ich ilości"""
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    cursor.execute("SELECT id, quantity FROM inventory WHERE LOWER(item_name) = LOWER(?)", (item_name,))
+    row = cursor.fetchone()
+    
+    if row:
+        cursor.execute("UPDATE inventory SET quantity = quantity + ? WHERE id = ?", (quantity, row[0]))
+    else:
+        cursor.execute("INSERT INTO inventory (item_name, item_type, quantity) VALUES (?, ?, ?)", (item_name, item_type, quantity))
+    
+    conn.commit()
+    conn.close()
+    return f"Dodano do ekwipunku: {item_name} x{quantity}"
+
+def remove_inventory_item(item_name, quantity=1):
+    """Pozwala AI na usuwanie przedmiotów na skutek zużycia lub kradzieży"""
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    cursor.execute("SELECT id, quantity FROM inventory WHERE LOWER(item_name) = LOWER(?)", (item_name,))
+    row = cursor.fetchone()
+    
+    if not row:
+        conn.close()
+        return f"Postać nie posiada przedmiotu: {item_name}"
+    
+    current_qty = row[1]
+    if current_qty <= quantity:
+        cursor.execute("DELETE FROM inventory WHERE id = ?", (row[0],))
+        result = f"Usunięto całkowicie przedmiot: {item_name}"
+    else:
+        cursor.execute("UPDATE inventory SET quantity = quantity - ? WHERE id = ?", (quantity, row[0]))
+        result = f"Zmniejszono ilość przedmiotu {item_name} o {quantity}"
+        
+    conn.commit()
+    conn.close()
+    return result
 
 def save_chat_message(role, content):
-    """Zapisuje pojedynczą wypowiedź do bazy danych, aby przetrwała odświeżenie strony."""
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
     cursor.execute("INSERT INTO rpg_chat_history (role, content) VALUES (?, ?)", (role, content))
@@ -109,7 +157,6 @@ def save_chat_message(role, content):
     conn.close()
 
 def get_chat_history():
-    """Zwraca pełną historię wiadomości RPG chronologicznie."""
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
     try:
@@ -121,7 +168,6 @@ def get_chat_history():
     return [{"role": r[0], "content": r[1]} for r in rows]
 
 def clear_all_rpg_data():
-    """Całkowity reset gry RPG - czyszczenie wszystkich tabel."""
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
     cursor.execute("DELETE FROM character_stats")
