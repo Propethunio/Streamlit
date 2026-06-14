@@ -53,17 +53,19 @@ button[kind="primary"], button[data-testid="baseButton-primary"] {
 button[kind="primary"] p, button[data-testid="baseButton-primary"] p {
     color: #ffffff !important; font-weight: 700 !important;
 }
-/* Przyciski opcji RPG — jednolity styl fioletowy */
-.rpg-action-btn button {
+/* Przyciski secondary w głównej treści (opcje RPG i inne) — jednolity styl fioletowy */
+[data-testid="stMainBlockContainer"] button[kind="secondary"],
+[data-testid="stMainBlockContainer"] button[data-testid="baseButton-secondary"] {
     background: rgba(138, 43, 226, 0.08) !important;
-    border: 1px solid rgba(138, 43, 226, 0.45) !important;
-    color: #e6edf3 !important; font-weight: 500 !important;
+    border: 1px solid rgba(138, 43, 226, 0.4) !important;
+    color: #e6edf3 !important;
     border-radius: 10px !important; transition: all 0.25s ease !important;
 }
-.rpg-action-btn button:hover {
-    background: rgba(138, 43, 226, 0.22) !important;
+[data-testid="stMainBlockContainer"] button[kind="secondary"]:hover,
+[data-testid="stMainBlockContainer"] button[data-testid="baseButton-secondary"]:hover {
+    background: rgba(138, 43, 226, 0.2) !important;
     border-color: #8a2be2 !important;
-    box-shadow: 0 0 12px rgba(138, 43, 226, 0.3) !important;
+    box-shadow: 0 0 12px rgba(138, 43, 226, 0.25) !important;
 }
 /* Redukowanie efektu przyciemnienia podczas rerunu Streamlita */
 [data-testid="stAppViewContainer"] { transition: opacity 0.05s !important; }

@@ -39,13 +39,39 @@ def render_sidebar_rpg():
 
 
 def _extract_options(text):
-    """Wyciąga opcje A)/B)/C) z tekstu MG. Zwraca (czysty_tekst, lista_opcji)."""
-    found = re.findall(r"(?m)^([A-C])\)\s*(.+)$", text)
-    if not found:
+    """
+    Wyciąga opcje A)/B)/C) z KOŃCA tekstu MG.
+    Skanuje od ostatniej linii w górę — wszystko przed pierwszą linią opcji to narracja.
+    Dzięki temu 'A)' w środku tekstu fabularnego nie jest mylnie traktowane jako opcja.
+    Zwraca (tekst_narracji, lista_opcji).
+    """
+    if not text:
+        return "", []
+
+    lines = text.split("\n")
+    option_map = {}      # litera → treść opcji
+    first_option_idx = len(lines)
+
+    for i in range(len(lines) - 1, -1, -1):
+        stripped = lines[i].strip()
+        m = re.match(r"^([A-C])\)\s*(.+)", stripped)
+        if m:
+            option_map[m.group(1)] = m.group(2).strip()
+            first_option_idx = i
+        elif stripped == "" and option_map:
+            # pusta linia tuż przed blokiem opcji — pomijamy
+            continue
+        elif option_map:
+            # napotkaliśmy normalny tekst — koniec bloku opcji
+            break
+
+    if len(option_map) < 2:
+        # Za mało opcji — zwracamy cały tekst bez zmian
         return text, []
-    options = [opt[1].strip() for opt in found]
-    clean = re.sub(r"(?m)^[A-C]\)\s*.+$", "", text).strip()
-    return clean, options
+
+    story = "\n".join(lines[:first_option_idx]).strip()
+    options = [option_map[k] for k in sorted(option_map.keys())]
+    return story, options
 
 
 def _scroll():
@@ -84,7 +110,8 @@ def _process_active_action(client, model, temp):
             full_response = call_rpg_ai(client, model, temp, send_messages)
             status.empty()
             clean_response, _ = _extract_options(full_response)
-            st.markdown(clean_response)
+            # Fallback: jeśli parsowanie wyczyściło cały tekst, pokaż surową odpowiedź
+            st.markdown(clean_response if clean_response else full_response)
         except Exception as e:
             status.empty()
             st.error(f"Błąd AI Mistrza Gry: {e}")
@@ -135,11 +162,14 @@ def render_rpg_tab(client, model, temp, text_to_speech_fn):
         with st.chat_message(msg["role"], avatar="👤" if msg["role"] == "user" else "🧙‍♂️"):
             if msg["role"] == "assistant":
                 is_last = i == len(messages) - 1
-                display_content = (
-                    clean_last_reply
-                    if (is_last and clean_last_reply is not None)
-                    else _extract_options(msg["content"])[0]
-                )
+                if is_last and clean_last_reply is not None:
+                    # Ostatnia wiadomość: użyj już obliczonego clean_last_reply
+                    parsed = clean_last_reply
+                else:
+                    # Starsze wiadomości: parsuj w locie
+                    parsed, _ = _extract_options(msg["content"])
+                # Fallback: jeśli parsowanie zostawiło pusty tekst, pokaż surową wiadomość
+                display_content = parsed if parsed else msg["content"]
             else:
                 display_content = msg["content"]
 
@@ -165,12 +195,9 @@ def render_rpg_tab(client, model, temp, text_to_speech_fn):
         cols = st.columns(len(options))
         for idx, option_text in enumerate(options):
             with cols[idx]:
-                # Wrapper div z klasą CSS dla jednolitego stylu fioletowego
-                st.markdown('<div class="rpg-action-btn">', unsafe_allow_html=True)
                 if st.button(option_text, use_container_width=True, key=f"rpg_btn_{idx}_{len(messages)}"):
                     st.session_state.active_rpg_action = option_text
                     st.rerun()
-                st.markdown('</div>', unsafe_allow_html=True)
 
     else:
         if free_prompt := st.chat_input("Mistrz Gry nie dał gotowych opcji. Co robisz?", key="rpg_input_field"):
