@@ -69,6 +69,9 @@ button[kind="primary"] p, button[data-testid="baseButton-primary"] p {
 }
 /* Redukowanie efektu przyciemnienia podczas rerunu Streamlita */
 [data-testid="stAppViewContainer"] { transition: opacity 0.05s !important; }
+/* Ukrycie ikon kotwicy przy headerach Streamlita (np. w tytule aplikacji) */
+.big-title a { display: none !important; }
+h1 a[href], h2 a[href], h3 a[href] { display: none !important; }
 .custom-hr { margin-top: 15px !important; margin-bottom: 15px !important; border: 0; border-top: 1px solid rgba(0, 212, 255, 0.15); }
 .token-counter {
     padding: 12px; border-radius: 10px; background: rgba(0, 212, 255, 0.04);

@@ -95,7 +95,7 @@ def _process_active_action(client, model, temp):
 
     history = rpg_database.get_chat_history()
     send_messages = [{"role": "system", "content": system_prompt}]
-    for m in history[-4:]:
+    for m in history[-8:]:
         send_messages.append({"role": m["role"], "content": m["content"]})
 
     full_response = None
@@ -168,8 +168,7 @@ def render_rpg_tab(client, model, temp, text_to_speech_fn):
                 else:
                     # Starsze wiadomości: parsuj w locie
                     parsed, _ = _extract_options(msg["content"])
-                # Fallback: jeśli parsowanie zostawiło pusty tekst, pokaż surową wiadomość
-                display_content = parsed if parsed else msg["content"]
+                display_content = parsed
             else:
                 display_content = msg["content"]
 
@@ -191,7 +190,11 @@ def render_rpg_tab(client, model, temp, text_to_speech_fn):
         _process_active_action(client, model, temp)
 
     elif len(options) >= 2:
-        st.write("### 🧭 Wybierz swoje działanie:")
+        st.markdown(
+            '<p style="text-align:center; font-size:20px; font-weight:700; '
+            'color:#b4c6ef; margin:8px 0 14px;">🧭 Wybierz swoje działanie:</p>',
+            unsafe_allow_html=True,
+        )
         cols = st.columns(len(options))
         for idx, option_text in enumerate(options):
             with cols[idx]:
