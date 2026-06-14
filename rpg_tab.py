@@ -1,5 +1,6 @@
 import re
 import streamlit as st
+import streamlit.components.v1 as components
 import rpg_database
 import rpg_visuals
 from rpg_engine import build_rpg_system_prompt, call_rpg_ai, RPG_INITIAL_SCENE
@@ -48,6 +49,16 @@ def _extract_options(text):
     return clean, options
 
 
+def _scroll_to_bottom():
+    """Wstrzykuje JS scrollujący stronę na dół po wyrenderowaniu nowych wiadomości."""
+    components.html(
+        """<script>
+            window.parent.scrollTo(0, window.parent.document.body.scrollHeight);
+        </script>""",
+        height=0,
+    )
+
+
 def _process_active_action(client, model, temp):
     """Obsługuje akcję gracza: zapis do bazy, wywołanie AI, zapis odpowiedzi, generacja obrazu."""
     action = st.session_state.pop("active_rpg_action")
@@ -74,9 +85,10 @@ def _process_active_action(client, model, temp):
             status.empty()
 
             rpg_database.save_chat_message("assistant", full_response)
+            st.session_state.total_tokens += (len(action) + len(full_response)) // 4
 
             with st.spinner("🖼️ Generowanie rzutu izometrycznego lokacji..."):
-                img_url = rpg_visuals.generate_game_scene(None, full_response)
+                img_url = rpg_visuals.generate_game_scene(full_response)
                 if img_url:
                     st.session_state.last_rpg_image = img_url
 
@@ -106,7 +118,7 @@ def _render_character_creation():
         st.rerun()
 
 
-def render_rpg_tab(client, model, temp, tts_mode, text_to_speech_fn):
+def render_rpg_tab(client, model, temp, text_to_speech_fn):
     character = rpg_database.get_character()
 
     if not character:
@@ -134,14 +146,21 @@ def render_rpg_tab(client, model, temp, tts_mode, text_to_speech_fn):
     if messages and messages[-1]["role"] == "assistant":
         clean_last_reply, options = _extract_options(messages[-1]["content"])
 
-    # Faza 3: historia chatu
+    # Faza 3: historia chatu — opcje A/B/C usuwane ze WSZYSTKICH wiadomości asystenta
     for i, msg in enumerate(messages):
         with st.chat_message(msg["role"], avatar="👤" if msg["role"] == "user" else "🧙‍♂️"):
-            is_last_assistant = msg["role"] == "assistant" and i == len(messages) - 1
-            display_content = clean_last_reply if (is_last_assistant and clean_last_reply is not None) else msg["content"]
+            if msg["role"] == "assistant":
+                is_last = i == len(messages) - 1
+                if is_last and clean_last_reply is not None:
+                    display_content = clean_last_reply
+                else:
+                    display_content, _ = _extract_options(msg["content"])
+            else:
+                display_content = msg["content"]
+
             st.markdown(display_content)
             if msg["role"] == "assistant" and st.button("🔊 Odsłuchaj", key=f"tts_rpg_{i}"):
-                html = text_to_speech_fn(display_content, tts_mode)
+                html = text_to_speech_fn(display_content)
                 if html:
                     st.markdown(html, unsafe_allow_html=True)
 
@@ -164,3 +183,5 @@ def render_rpg_tab(client, model, temp, tts_mode, text_to_speech_fn):
         if free_prompt := st.chat_input("Mistrz Gry nie dał gotowych opcji. Co robisz?", key="rpg_input_field"):
             st.session_state.active_rpg_action = free_prompt
             st.rerun()
+
+    _scroll_to_bottom()

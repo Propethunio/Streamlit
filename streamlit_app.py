@@ -49,16 +49,12 @@ MODELS = [
 
 # --- FUNKCJE POMOCNICZE ---
 
-def text_to_speech(text, mode):
+def text_to_speech(text):
+    """Konwertuje tekst na mowę przy użyciu gTTS (Google Text-to-Speech, bezpłatny)."""
     try:
-        if mode == "Premium (OpenAI)" and client:
-            resp = client.audio.speech.create(model="tts-1", voice="alloy", input=text[:4000])
-            audio_data = resp.content
-        else:
-            fp = io.BytesIO()
-            gTTS(text=text, lang="pl").write_to_fp(fp)
-            audio_data = fp.getvalue()
-        b64 = base64.b64encode(audio_data).decode()
+        fp = io.BytesIO()
+        gTTS(text=text, lang="pl").write_to_fp(fp)
+        b64 = base64.b64encode(fp.getvalue()).decode()
         return f'<audio controls autoplay="true"><source src="data:audio/mp3;base64,{b64}" type="audio/mp3"></audio>'
     except Exception as e:
         st.error(f"Błąd audio: {e}")
@@ -102,7 +98,6 @@ with st.sidebar:
     st.markdown("<h5 style='color: #b4c6ef;'>⚙️ PARAMETRY SILNIKA</h5>", unsafe_allow_html=True)
     selected_model = st.selectbox("Model językowy:", MODELS, key=f"model_{st.session_state.reset_key}")
     temp = st.slider("Kreatywność (Temp)", 0.0, 2.0, 0.7, 0.1, key=f"temp_{st.session_state.reset_key}")
-    tts_mode = st.radio("Silnik audio TTS:", ["Premium (OpenAI)", "Free (gTTS)"], key=f"tts_{st.session_state.reset_key}")
     st.markdown('<hr class="custom-hr">', unsafe_allow_html=True)
 
     if st.button("🚨 GŁÓWNY WIPE CAŁEJ APKI", use_container_width=True):
@@ -118,9 +113,9 @@ with st.sidebar:
 st.markdown('<h1 class="big-title">NEON GEMINI ADVANCED</h1>', unsafe_allow_html=True)
 
 if app_mode == "💬 ASYSTENT & RAG CHAT":
-    render_chat_tab(client, selected_model, temp, tts_mode, file_content, image_payload, text_to_speech)
+    render_chat_tab(client, selected_model, temp, file_content, image_payload, text_to_speech)
 else:
-    render_rpg_tab(client, selected_model, temp, tts_mode, text_to_speech)
+    render_rpg_tab(client, selected_model, temp, text_to_speech)
 
 st.markdown(
     '<div style="text-align: center; opacity: 0.2; font-size: 10px; margin-top: 50px;">'

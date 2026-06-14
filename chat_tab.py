@@ -1,5 +1,6 @@
 import base64
 import streamlit as st
+import streamlit.components.v1 as components
 import docloader
 import embedder_rag
 from styles import THINKING_BOX_HTML
@@ -81,12 +82,12 @@ def render_sidebar_chat(reset_key):
     return file_content, image_payload
 
 
-def render_chat_tab(client, model, temp, tts_mode, file_content, image_payload, text_to_speech_fn):
+def render_chat_tab(client, model, temp, file_content, image_payload, text_to_speech_fn):
     for i, msg in enumerate(st.session_state.messages):
         with st.chat_message(msg["role"], avatar="👤" if msg["role"] == "user" else "🌌"):
             st.markdown(msg["content"])
             if msg["role"] == "assistant" and st.button("🔊 Odsłuchaj", key=f"tts_chat_{i}"):
-                html = text_to_speech_fn(msg["content"], tts_mode)
+                html = text_to_speech_fn(msg["content"])
                 if html:
                     st.markdown(html, unsafe_allow_html=True)
 
@@ -141,3 +142,8 @@ def render_chat_tab(client, model, temp, tts_mode, file_content, image_payload, 
             except Exception as e:
                 status.empty()
                 st.error(f"Błąd: {e}")
+
+    components.html(
+        """<script>window.parent.scrollTo(0, window.parent.document.body.scrollHeight);</script>""",
+        height=0,
+    )
