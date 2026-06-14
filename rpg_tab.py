@@ -120,8 +120,7 @@ def _process_active_action(client, model, temp):
         try:
             full_response = call_rpg_ai(client, model, temp, send_messages)
             status.empty()
-            clean_response, _ = _extract_options(full_response)
-            st.markdown(clean_response)
+            st.markdown(full_response)
         except Exception as e:
             status.empty()
             st.error(f"Błąd AI Mistrza Gry: {e}")
@@ -159,28 +158,17 @@ def render_rpg_tab(client, model, temp, text_to_speech_fn):
         _render_character_creation()
         return
 
-    # Faza 1: wyciąganie opcji z ostatniej wiadomości MG
+    # Faza 1: wyciąganie opcji z ostatniej wiadomości MG (tylko do przycisków)
     messages = st.session_state.rpg_messages
-    clean_last_reply = None
     options = []
 
     if messages and messages[-1]["role"] == "assistant":
-        clean_last_reply, options = _extract_options(messages[-1]["content"])
+        _, options = _extract_options(messages[-1]["content"])
 
-    # Faza 2: historia chatu — opcje A/B/C usuwane ze WSZYSTKICH wiadomości asystenta
+    # Faza 2: historia chatu — wyświetlamy pełny tekst bez wycinania
     for i, msg in enumerate(messages):
         with st.chat_message(msg["role"], avatar="👤" if msg["role"] == "user" else "🧙‍♂️"):
-            if msg["role"] == "assistant":
-                is_last = i == len(messages) - 1
-                if is_last and clean_last_reply is not None:
-                    # Ostatnia wiadomość: użyj już obliczonego clean_last_reply
-                    parsed = clean_last_reply
-                else:
-                    # Starsze wiadomości: parsuj w locie
-                    parsed, _ = _extract_options(msg["content"])
-                display_content = parsed
-            else:
-                display_content = msg["content"]
+            display_content = msg["content"]
 
             st.markdown(display_content)
             if msg["role"] == "assistant" and st.button("🔊 Odsłuchaj", key=f"tts_rpg_{i}"):
