@@ -16,7 +16,7 @@ def _show_codex_dialog():
 
 def _render_codex_controls():
     """Panel kodeksu: podgląd, pobranie wzorcowego PDF, podmiana świata na własny PDF."""
-    with st.expander("📖 KODEKS ŚWIATA"):
+    with st.expander("📖 KODEKS ŚWIATA", expanded=True):
         st.caption(f"Aktywny świat: **{st.session_state.get('rpg_lore_name', DEFAULT_LORE_NAME)}**")
 
         if st.button("👁️ Podejrzyj kodeks", use_container_width=True, key="rpg_codex_view"):
