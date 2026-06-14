@@ -286,27 +286,41 @@ else:
         if st.session_state.last_rpg_image:
             st.image(st.session_state.last_rpg_image, caption=f"Bieżąca lokacja: {character['location']}", use_container_width=True)
 
-        # --- RENDEROWANIE HISTORII Z OBSŁUGĄ TTS ---
+        # --- 1. WYCIĄGANIE I WYCINANIE OPCJI DLA OSTATNIEJ WIADOMOŚCI ---
+        options = []
+        clean_last_reply = None
+        
+        if st.session_state.rpg_messages and st.session_state.rpg_messages[-1]["role"] == "assistant":
+            last_reply = st.session_state.rpg_messages[-1]["content"]
+            
+            # Precyzyjny regex łapiący bloki opcji A), B), C) od nowej linii
+            found_options = re.findall(r"(?m)^([A-C])\)\s*(.+)$", last_reply)
+            if found_options:
+                options = [f"{opt[0]}: {opt[1].strip()}" for opt in found_options]
+                
+                # Usuwamy całą sekcję opcji z tekstu, żeby nie dublować ich na ekranie
+                clean_last_reply = re.sub(r"(?m)^[A-C]\)\s*.+$", "", last_reply).strip()
+
+        # --- 2. RENDEROWANIE HISTORII (Z OCZYSZCZONĄ OSTATNIĄ ODPOWIEDZIĄ) ---
         for i, msg in enumerate(st.session_state.rpg_messages):
             with st.chat_message(msg["role"], avatar="👤" if msg["role"]=="user" else "🧙‍♂️"):
-                st.markdown(msg["content"])
+                # Jeśli to ostatnia odpowiedź asystenta i udało się wyciąć opcje, pokazujemy czysty tekst
+                if msg["role"] == "assistant" and i == len(st.session_state.rpg_messages) - 1 and clean_last_reply is not None:
+                    st.markdown(clean_last_reply)
+                    content_for_tts = clean_last_reply
+                else:
+                    st.markdown(msg["content"])
+                    content_for_tts = msg["content"]
+                
                 if msg["role"] == "assistant" and st.button(f"🔊 Odsłuchaj", key=f"tts_rpg_{i}"):
-                    html = text_to_speech(msg["content"], tts_mode)
+                    html = text_to_speech(content_for_tts, tts_mode)
                     if html: 
                         st.markdown(html, unsafe_allow_html=True)
 
-        # --- DYNAMICZNY FILTR AKCJI (PRZYCISKI LUB SWOBODNY TEKST) ---
-        options = []
-        if st.session_state.rpg_messages and st.session_state.rpg_messages[-1]["role"] == "assistant":
-            last_reply = st.session_state.rpg_messages[-1]["content"]
-            # Szuka schematów typu: A) Tekst, B. Tekst, C - Tekst itp.
-            found_options = re.findall(r"([A-C|1-3])[\).\:\-\s]+([^\n]+)", last_reply)
-            if found_options:
-                options = [f"{opt[0].upper()}: {opt[1].strip()}" for opt in found_options]
-
-        # Inicjalizacja zmiennej przechowującej ostateczną decyzję gracza
+        # Inicjalizacja zmiennej na akcję gracza
         final_action_prompt = None
 
+        # --- 3. PRZYCISKI LUB SWOBODNY TEKST ---
         st.markdown("<br>", unsafe_allow_html=True)
         if options and len(options) >= 2:
             st.write("### 🧭 Wybierz swoje działanie:")
@@ -316,17 +330,17 @@ else:
                     if st.button(option_text, use_container_width=True, type="primary" if idx == 0 else "secondary", key=f"rpg_btn_{idx}"):
                         final_action_prompt = option_text
         else:
-            # Koło ratunkowe: Jeśli brak opcji, renderujemy okno swobodnego pisania
+            # Koło ratunkowe: Okno pisania, gdyby bot pominął opcje
             if free_prompt := st.chat_input("Mistrz Gry nie dał gotowych opcji. Co robisz?", key="rpg_input_field"):
                 final_action_prompt = free_prompt
 
-        # Jeśli akcja została wybrana przez przycisk lub wpisana z palca, zapisujemy ją
+        # Obsługa wysyłania akcji
         if final_action_prompt:
             rpg_database.save_chat_message("user", final_action_prompt)
             st.session_state.rpg_messages = rpg_database.get_chat_history()
             st.rerun()
 
-        # --- GENEROWANIE NOWEJ TURY PRZEZ MG ---
+        # --- 4. GENEROWANIE NOWEJ TURY PRZEZ MG ---
         if st.session_state.rpg_messages and st.session_state.rpg_messages[-1]["role"] == "user":
             rpg_tools = [
                 {
@@ -379,6 +393,8 @@ else:
             ]
 
             current_inv_list = [f"{i['name']} (x{i['qty']})" for i in rpg_database.get_inventory()]
+            
+            # --- ZAKTUALIZOWANY, RYGORYSTYCZNY PROMPT SYSTEMOWY ---
             rpg_system_prompt = (
                 f"Jesteś profesjonalnym Mistrzem Gry RPG prowadzącym mroczną sesję cyberpunk.\n"
                 f"Gracz: {character['name']} | Klasa: {character['class']}.\n"
@@ -388,15 +404,16 @@ else:
                 f"2. Kiedy gracz wykonuje akcję, która logicznie go rani, leczy, kosztuje pieniądze lub daje zarobek – WYWOŁAJ funkcję `modify_stats`.\n"
                 f"3. Kiedy gracz znajduje, kupuje przedmiot lub go zużywa/traci – WYWOŁAJ `add_inventory_item` lub `remove_inventory_item`.\n"
                 f"4. Jeśli gracz próbuje użyć przedmiotu, którego nie ma w wyżej wymienionym Ekwipunku, opisz w opowiadaniu niepowodzenie z powodu braku zasobów.\n\n"
-                f"CRITICAL FORMATTING RULE:\n"
-                f"Na samym końcu wypowiedzi ZAWSZE wygeneruj dokładnie 3 odrębne opcje wyboru dla gracza, każda w nowej linii, dokładnie w formacie:\n"
-                f"A) Krótki opis wyboru\n"
-                f"B) Krótki opis wyboru\n"
-                f"C) Krótki opis wyboru"
+                f"BEZWZGLĘDNA ZASADA GENEROWANIA OPCJI:\n"
+                f"Na samym końcu swojej wypowiedzi dopisz sekcję z wyborami jeśli ma sens (bardzo rzadko chcemy zostawić graczowi swobodny wybór). Muszą to być MAKSYMALNIE 3 opcje, każda od nowej linii, rozpoczynające się wyłącznie od wielkich liter z nawiasem. Format musi być identyczny jak poniżej:\n"
+                f"A) Krótki opis pierwszej akcji\n"
+                f"B) Krótki opis drugiej akcji\n"
+                f"C) Krótki opis trzeciej akcji\n\n"
+                f"Nie dodawaj żadnego tekstu, podsumowań ani komentarzy po opcji C.\n"
+                f"Nie stosuj w żadnym innym miejscu wypowiedzi tego schametu duża litera + ), bo taki schemat automatycznie trafia do przycisku z opcjami gracza"
             )
             
             rpg_messages_to_send = [{"role": "system", "content": rpg_system_prompt}]
-            # Szybkie przesyłanie ostatnich 4 wiadomości, aby unikać blokad minutowych (TPM)
             for m in st.session_state.rpg_messages[-4:]: 
                 rpg_messages_to_send.append({"role": m["role"], "content": m["content"]})
 
@@ -454,7 +471,14 @@ else:
                         full_rpg_response = response_message.content
 
                     status.empty()
-                    st.markdown(full_rpg_response)
+                    
+                    # Logika czyszczenia dla nowo wygenerowanej odpowiedzi w locie
+                    temp_options = re.findall(r"(?m)^([A-C])\)\s*(.+)$", full_rpg_response)
+                    if temp_options:
+                        clean_preview = re.sub(r"(?m)^[A-C]\)\s*.+$", "", full_rpg_response).strip()
+                        st.markdown(clean_preview)
+                    else:
+                        st.markdown(full_rpg_response)
                     
                     rpg_database.save_chat_message("assistant", full_rpg_response)
                     
