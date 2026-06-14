@@ -45,6 +45,7 @@ NEON_CSS = """
 [data-testid="stSidebar"] .stRadio div[role="radiogroup"] label:hover {
     border-color: #00d4ff !important; background: rgba(0, 212, 255, 0.05) !important;
 }
+/* Przyciski globalne (akcje resetowania itp.) */
 button[kind="primary"], button[data-testid="baseButton-primary"] {
     background-color: #ff2a5f !important; border: 1px solid #ff003c !important;
     box-shadow: 0 0 10px rgba(255, 42, 95, 0.2) !important;
@@ -52,6 +53,20 @@ button[kind="primary"], button[data-testid="baseButton-primary"] {
 button[kind="primary"] p, button[data-testid="baseButton-primary"] p {
     color: #ffffff !important; font-weight: 700 !important;
 }
+/* Przyciski opcji RPG — jednolity styl fioletowy */
+.rpg-action-btn button {
+    background: rgba(138, 43, 226, 0.08) !important;
+    border: 1px solid rgba(138, 43, 226, 0.45) !important;
+    color: #e6edf3 !important; font-weight: 500 !important;
+    border-radius: 10px !important; transition: all 0.25s ease !important;
+}
+.rpg-action-btn button:hover {
+    background: rgba(138, 43, 226, 0.22) !important;
+    border-color: #8a2be2 !important;
+    box-shadow: 0 0 12px rgba(138, 43, 226, 0.3) !important;
+}
+/* Redukowanie efektu przyciemnienia podczas rerunu Streamlita */
+[data-testid="stAppViewContainer"] { transition: opacity 0.05s !important; }
 .custom-hr { margin-top: 15px !important; margin-bottom: 15px !important; border: 0; border-top: 1px solid rgba(0, 212, 255, 0.15); }
 .token-counter {
     padding: 12px; border-radius: 10px; background: rgba(0, 212, 255, 0.04);
@@ -61,3 +76,35 @@ button[kind="primary"] p, button[data-testid="baseButton-primary"] p {
 """
 
 THINKING_BOX_HTML = '<div class="thinking-box"><div class="loader"></div><span>{message}</span></div>'
+
+# JS scrollujący do dołu strony — działa przez iframe komponentu Streamlit
+SCROLL_TO_BOTTOM_JS = """
+<script>
+(function() {
+    function scrollToBottom() {
+        var doc = window.parent.document;
+        var scrolled = false;
+        var selectors = [
+            '[data-testid="stMainBlockContainer"]',
+            '[data-testid="stAppViewBlockContainer"]',
+            '[data-testid="stAppViewContainer"]',
+            'section.main',
+            '.main'
+        ];
+        for (var i = 0; i < selectors.length; i++) {
+            var el = doc.querySelector(selectors[i]);
+            if (el && el.scrollHeight > el.clientHeight) {
+                el.scrollTop = el.scrollHeight;
+                scrolled = true;
+            }
+        }
+        if (!scrolled) {
+            doc.documentElement.scrollTop = doc.documentElement.scrollHeight;
+        }
+    }
+    scrollToBottom();
+    setTimeout(scrollToBottom, 150);
+    setTimeout(scrollToBottom, 500);
+})();
+</script>
+"""

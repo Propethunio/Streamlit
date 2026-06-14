@@ -3,32 +3,7 @@ import streamlit as st
 import streamlit.components.v1 as components
 import docloader
 import embedder_rag
-from styles import THINKING_BOX_HTML
-
-_SCROLL_JS = """
-<script>
-(function() {
-    function scroll() {
-        var selectors = [
-            '[data-testid="stMainBlockContainer"]',
-            '[data-testid="stAppViewBlockContainer"]',
-            'section.main',
-            '.main'
-        ];
-        for (var i = 0; i < selectors.length; i++) {
-            var el = window.parent.document.querySelector(selectors[i]);
-            if (el && el.scrollHeight > el.clientHeight) {
-                el.scrollTop = el.scrollHeight;
-                return;
-            }
-        }
-        window.parent.scrollTo(0, 999999);
-    }
-    scroll();
-    setTimeout(scroll, 300);
-})();
-</script>
-"""
+from styles import THINKING_BOX_HTML, SCROLL_TO_BOTTOM_JS
 
 PERSONA_PROMPTS = {
     "Asystent (Standard)": "Jesteś pomocnym asystentem AI.",
@@ -168,4 +143,4 @@ def render_chat_tab(client, model, temp, file_content, image_payload, text_to_sp
                 status.empty()
                 st.error(f"Błąd: {e}")
 
-    components.html(_SCROLL_JS, height=0)
+    components.html(SCROLL_TO_BOTTOM_JS, height=1)
