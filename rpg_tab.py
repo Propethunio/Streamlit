@@ -1,4 +1,5 @@
 import re
+import time
 import streamlit as st
 import streamlit.components.v1 as components
 import rpg_database
@@ -16,7 +17,7 @@ def _show_codex_dialog():
 
 def _render_codex_controls():
     """Panel kodeksu: podgląd, pobranie wzorcowego PDF, podmiana świata na własny PDF."""
-    with st.expander("📖 KODEKS ŚWIATA", expanded=True):
+    with st.expander("📖 KODEKS ŚWIATA", expanded=False):
         st.caption(f"Aktywny świat: **{st.session_state.get('rpg_lore_name', DEFAULT_LORE_NAME)}**")
 
         if st.button("👁️ Podejrzyj kodeks", use_container_width=True, key="rpg_codex_view"):
@@ -65,11 +66,10 @@ def _render_codex_controls():
 def render_sidebar_rpg():
     st.markdown("<h4 style='color: #8a2be2; margin-top:-5px;'>👤 STATUS POSTACI RPG</h4>", unsafe_allow_html=True)
 
-    _render_codex_controls()
-
     character = rpg_database.get_character()
     if not character:
         st.info("Brak bohatera. Stwórz go na głównym ekranie.")
+        _render_codex_controls()
         return
 
     st.markdown(f"""
@@ -87,6 +87,8 @@ def render_sidebar_rpg():
         with st.expander("🎒 EKWIPUNEK BOHATERA", expanded=True):
             for it in items:
                 st.caption(f"• {it['name']} ({it['type']}) x{it['qty']}")
+
+    _render_codex_controls()
 
     st.markdown("<br>", unsafe_allow_html=True)
     if st.button("🗑️ ZRESETUJ POSTAĆ & GRĘ", use_container_width=True, type="primary"):
@@ -145,7 +147,9 @@ def _extract_options(text):
 
 
 def _scroll():
-    components.html(SCROLL_TO_BOTTOM_JS, height=1)
+    token = int(time.time() * 1000) % 999983  # unikalny token — wymusza reexekucję JS
+    js = SCROLL_TO_BOTTOM_JS.replace("__TOKEN__", str(token))
+    components.html(js, height=0, scrolling=False)
 
 
 def _process_active_action(client, model, temp):
@@ -274,6 +278,7 @@ def render_rpg_tab(client, model, temp, text_to_speech_fn):
         # Pokaż wiadomość gracza od razu, potem przetwarzaj inline (bez ślepego rerunu)
         with st.chat_message("user", avatar="👤"):
             st.markdown(pending_action)
+        _scroll()  # scrolluj zanim AI zacznie "myśleć" — żeby thinking box był widoczny
         _process_active_action(client, model, temp)
 
     elif character["hp"] <= 0:

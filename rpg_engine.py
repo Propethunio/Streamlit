@@ -156,6 +156,40 @@ def _dispatch_tool_call(func_name, func_args):
     return f"Nieznane narzędzie: {func_name}"
 
 
+def _build_changes_summary(changes):
+    """Buduje czytelne podsumowanie zmian statystyk/ekwipunku/lokacji z listy tool callów."""
+    lines = []
+    for func_name, func_args in changes:
+        if func_name == "modify_stats":
+            hp = func_args.get("hp_change", 0)
+            gold = func_args.get("gold_change", 0)
+            loc = func_args.get("new_location")
+            if hp < 0:
+                lines.append(f"❤️ Stracono **{abs(hp)} HP**")
+            elif hp > 0:
+                lines.append(f"❤️ Odzyskano **{hp} HP**")
+            if gold < 0:
+                lines.append(f"💰 Stracono **{abs(gold)} kredytów**")
+            elif gold > 0:
+                lines.append(f"💰 Zdobyto **{gold} kredytów**")
+            if loc:
+                lines.append(f"📍 Lokacja: **{loc}**")
+        elif func_name == "add_inventory_item":
+            name = func_args.get("item_name", "?")
+            qty = func_args.get("quantity", 1)
+            suffix = f" ×{qty}" if qty > 1 else ""
+            lines.append(f"🎒 Otrzymano: **{name}**{suffix}")
+        elif func_name == "remove_inventory_item":
+            name = func_args.get("item_name", "?")
+            qty = func_args.get("quantity", 1)
+            suffix = f" ×{qty}" if qty > 1 else ""
+            lines.append(f"🎒 Utracono: **{name}**{suffix}")
+    if not lines:
+        return ""
+    body = "\n".join(f"— {l}" for l in lines)
+    return f"\n\n---\n*📊 Zmiany w tej turze:*\n{body}"
+
+
 def call_rpg_ai(client, model, temp, messages):
     """Wywołuje AI z function calling i zwraca końcową odpowiedź tekstową."""
     response = client.chat.completions.create(
@@ -177,9 +211,11 @@ def call_rpg_ai(client, model, temp, messages):
     first_content = (response_message.content or "").strip()
 
     messages.append(response_message)
+    changes = []
     for tool_call in tool_calls:
         func_name = tool_call.function.name
         func_args = json.loads(tool_call.function.arguments)
+        changes.append((func_name, func_args))
         result = _dispatch_tool_call(func_name, func_args)
         messages.append({
             "role": "tool",
@@ -194,7 +230,8 @@ def call_rpg_ai(client, model, temp, messages):
     second_content = (second_response.choices[0].message.content or "").strip()
 
     parts = [p for p in [first_content, second_content] if p]
-    return "\n\n".join(parts)
+    combined = "\n\n".join(parts)
+    return combined + _build_changes_summary(changes)
 
 
 def generate_opening_scene(client, model, temp, character, lore_text):
