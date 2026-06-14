@@ -5,6 +5,31 @@ import docloader
 import embedder_rag
 from styles import THINKING_BOX_HTML
 
+_SCROLL_JS = """
+<script>
+(function() {
+    function scroll() {
+        var selectors = [
+            '[data-testid="stMainBlockContainer"]',
+            '[data-testid="stAppViewBlockContainer"]',
+            'section.main',
+            '.main'
+        ];
+        for (var i = 0; i < selectors.length; i++) {
+            var el = window.parent.document.querySelector(selectors[i]);
+            if (el && el.scrollHeight > el.clientHeight) {
+                el.scrollTop = el.scrollHeight;
+                return;
+            }
+        }
+        window.parent.scrollTo(0, 999999);
+    }
+    scroll();
+    setTimeout(scroll, 300);
+})();
+</script>
+"""
+
 PERSONA_PROMPTS = {
     "Asystent (Standard)": "Jesteś pomocnym asystentem AI.",
     "Cyberpunk Hacker": "Mów jak haker z przyszłości, używaj technicznego slangu, bądź tajemniczy i neonowy.",
@@ -143,7 +168,4 @@ def render_chat_tab(client, model, temp, file_content, image_payload, text_to_sp
                 status.empty()
                 st.error(f"Błąd: {e}")
 
-    components.html(
-        """<script>window.parent.scrollTo(0, window.parent.document.body.scrollHeight);</script>""",
-        height=0,
-    )
+    components.html(_SCROLL_JS, height=0)

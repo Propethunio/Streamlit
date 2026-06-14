@@ -6,6 +6,32 @@ import rpg_visuals
 from rpg_engine import build_rpg_system_prompt, call_rpg_ai, RPG_INITIAL_SCENE
 from styles import THINKING_BOX_HTML
 
+# Selektor scrollowalnego kontenera Streamlit (zależy od wersji)
+_SCROLL_JS = """
+<script>
+(function() {
+    function scroll() {
+        var selectors = [
+            '[data-testid="stMainBlockContainer"]',
+            '[data-testid="stAppViewBlockContainer"]',
+            'section.main',
+            '.main'
+        ];
+        for (var i = 0; i < selectors.length; i++) {
+            var el = window.parent.document.querySelector(selectors[i]);
+            if (el && el.scrollHeight > el.clientHeight) {
+                el.scrollTop = el.scrollHeight;
+                return;
+            }
+        }
+        window.parent.scrollTo(0, 999999);
+    }
+    scroll();
+    setTimeout(scroll, 300);
+})();
+</script>
+"""
+
 
 def render_sidebar_rpg():
     st.markdown("<h4 style='color: #8a2be2; margin-top:-5px;'>👤 STATUS POSTACI RPG</h4>", unsafe_allow_html=True)
@@ -49,54 +75,57 @@ def _extract_options(text):
     return clean, options
 
 
-def _scroll_to_bottom():
-    """Wstrzykuje JS scrollujący stronę na dół po wyrenderowaniu nowych wiadomości."""
-    components.html(
-        """<script>
-            window.parent.scrollTo(0, window.parent.document.body.scrollHeight);
-        </script>""",
-        height=0,
-    )
-
-
 def _process_active_action(client, model, temp):
-    """Obsługuje akcję gracza: zapis do bazy, wywołanie AI, zapis odpowiedzi, generacja obrazu."""
+    """
+    Przetwarza akcję gracza: wywołuje AI, pokazuje odpowiedź inline (jak zakładka chat),
+    a dopiero po zakończeniu zapisuje do bazy i wyzwala rerun.
+    """
     action = st.session_state.pop("active_rpg_action")
     rpg_database.save_chat_message("user", action)
-    st.session_state.rpg_messages = rpg_database.get_chat_history()
 
     character = rpg_database.get_character()
     inv_list = [f"{i['name']} (x{i['qty']})" for i in rpg_database.get_inventory()]
     system_prompt = build_rpg_system_prompt(character, inv_list)
 
-    # Ostatnie 4 wiadomości jako kontekst (żeby nie przekroczyć limitu tokenów przy długich sesjach)
-    messages = [{"role": "system", "content": system_prompt}]
-    for m in st.session_state.rpg_messages[-4:]:
-        messages.append({"role": m["role"], "content": m["content"]})
+    # Historia z bazy (zawiera już zapisaną akcję gracza)
+    history = rpg_database.get_chat_history()
+    send_messages = [{"role": "system", "content": system_prompt}]
+    for m in history[-4:]:
+        send_messages.append({"role": m["role"], "content": m["content"]})
 
+    full_response = None
+
+    # Odpowiedź asystenta — widoczna od razu, jak w zakładce chat
     with st.chat_message("assistant", avatar="🧙‍♂️"):
         status = st.empty()
         status.markdown(
-            THINKING_BOX_HTML.format(message="Mistrz Gry przetwarza akcję i oblicza modyfikatory..."),
+            THINKING_BOX_HTML.format(message="Mistrz Gry oblicza los twojej decyzji..."),
             unsafe_allow_html=True,
         )
         try:
-            full_response = call_rpg_ai(client, model, temp, messages)
+            full_response = call_rpg_ai(client, model, temp, send_messages)
             status.empty()
-
-            rpg_database.save_chat_message("assistant", full_response)
-            st.session_state.total_tokens += (len(action) + len(full_response)) // 4
-
-            with st.spinner("🖼️ Generowanie rzutu izometrycznego lokacji..."):
-                img_url = rpg_visuals.generate_game_scene(full_response)
-                if img_url:
-                    st.session_state.last_rpg_image = img_url
-
-            st.session_state.rpg_messages = rpg_database.get_chat_history()
-
+            clean_response, _ = _extract_options(full_response)
+            st.markdown(clean_response)
         except Exception as e:
             status.empty()
-            st.error(f"Błąd pętli decyzyjnej MG: {e}")
+            st.error(f"Błąd AI Mistrza Gry: {e}")
+            return
+
+    # Zapis i licznik tokenów poza bańką chat
+    rpg_database.save_chat_message("assistant", full_response)
+    st.session_state.total_tokens += (len(action) + len(full_response)) // 4
+
+    # Generacja obrazu — poza bańką chat, błędy są widoczne i nie giną po rerunie
+    with st.spinner("🖼️ Generowanie ilustracji lokacji..."):
+        try:
+            img_url = rpg_visuals.generate_game_scene(full_response)
+            st.session_state.last_rpg_image = img_url
+        except Exception as e:
+            st.error(f"⚠️ Błąd Imagen 3: {e}")
+
+    st.session_state.rpg_messages = rpg_database.get_chat_history()
+    st.rerun()
 
 
 def _render_character_creation():
@@ -125,10 +154,6 @@ def render_rpg_tab(client, model, temp, text_to_speech_fn):
         _render_character_creation()
         return
 
-    # Faza 0: przetwarzanie akcji przed renderowaniem (zapobiega skakaniu UI)
-    if st.session_state.get("active_rpg_action"):
-        _process_active_action(client, model, temp)
-
     # Faza 1: obraz bieżącej lokacji
     character = rpg_database.get_character()
     if st.session_state.last_rpg_image:
@@ -151,10 +176,7 @@ def render_rpg_tab(client, model, temp, text_to_speech_fn):
         with st.chat_message(msg["role"], avatar="👤" if msg["role"] == "user" else "🧙‍♂️"):
             if msg["role"] == "assistant":
                 is_last = i == len(messages) - 1
-                if is_last and clean_last_reply is not None:
-                    display_content = clean_last_reply
-                else:
-                    display_content, _ = _extract_options(msg["content"])
+                display_content = clean_last_reply if (is_last and clean_last_reply is not None) else _extract_options(msg["content"])[0]
             else:
                 display_content = msg["content"]
 
@@ -164,9 +186,18 @@ def render_rpg_tab(client, model, temp, text_to_speech_fn):
                 if html:
                     st.markdown(html, unsafe_allow_html=True)
 
-    # Faza 4: przyciski akcji lub wolny input
+    # Faza 4: akcja gracza lub przetwarzanie oczekującej akcji
     st.markdown("<br>", unsafe_allow_html=True)
-    if len(options) >= 2:
+
+    pending_action = st.session_state.get("active_rpg_action")
+
+    if pending_action:
+        # Pokaż wiadomość gracza od razu, a potem przetwarzaj (jak w zakładce chat)
+        with st.chat_message("user", avatar="👤"):
+            st.markdown(pending_action)
+        _process_active_action(client, model, temp)
+
+    elif len(options) >= 2:
         st.write("### 🧭 Wybierz swoje działanie:")
         cols = st.columns(len(options))
         for idx, option_text in enumerate(options):
@@ -179,9 +210,10 @@ def render_rpg_tab(client, model, temp, text_to_speech_fn):
                 ):
                     st.session_state.active_rpg_action = option_text
                     st.rerun()
+
     else:
         if free_prompt := st.chat_input("Mistrz Gry nie dał gotowych opcji. Co robisz?", key="rpg_input_field"):
             st.session_state.active_rpg_action = free_prompt
             st.rerun()
 
-    _scroll_to_bottom()
+    components.html(_SCROLL_JS, height=0)
