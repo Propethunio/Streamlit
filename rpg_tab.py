@@ -2,7 +2,7 @@ import re
 import streamlit as st
 import rpg_database
 import docloader
-from rpg_engine import build_rpg_system_prompt, call_rpg_ai, generate_opening_scene
+from rpg_engine import build_rpg_system_prompt, call_rpg_ai, generate_opening_scene, strip_changes_tail_from_history
 from game_lore import GAME_CODEX, DEFAULT_LORE_NAME, load_default_lore_pdf_bytes
 from styles import THINKING_BOX_HTML
 
@@ -164,7 +164,8 @@ def _process_active_action(client, model, temp):
     history = rpg_database.get_chat_history()
     send_messages = [{"role": "system", "content": system_prompt}]
     for m in history[-8:]:
-        send_messages.append({"role": m["role"], "content": m["content"]})
+        content = strip_changes_tail_from_history(m["content"]) if m["role"] == "assistant" else m["content"]
+        send_messages.append({"role": m["role"], "content": content})
 
     full_response = None
 

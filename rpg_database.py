@@ -147,6 +147,23 @@ def remove_inventory_item(item_name, quantity=1):
     conn.close()
     return result
 
+def set_starting_stats(max_hp, current_hp, gold):
+    """Ustawia absolutne wartości startowe HP i złota na początku kampanii."""
+    char = get_character()
+    if not char:
+        return "Błąd: Postać nie istnieje."
+    current_hp = max(1, min(max_hp, current_hp))
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    cursor.execute(
+        "UPDATE character_stats SET hp = ?, max_hp = ?, gold = ? WHERE id = ?",
+        (current_hp, max_hp, gold, char["id"]),
+    )
+    conn.commit()
+    conn.close()
+    return f"Ustawiono statystyki startowe: HP {current_hp}/{max_hp}, Kredyty: {gold}"
+
+
 def save_chat_message(role, content):
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()

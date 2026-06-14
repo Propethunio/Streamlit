@@ -77,6 +77,36 @@ RPG_TOOLS = [
     }
 ]
 
+STARTING_STATS_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "set_starting_stats",
+        "description": (
+            "Ustawia absolutne statystyki startowe postaci na początku kampanii (max HP, aktualne HP i kredyty/złoto). "
+            "Wywołaj DOKŁADNIE RAZ, przed napisaniem narracji otwierającej, aby dostosować wartości do klasy i realiów świata."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "max_hp": {
+                    "type": "integer",
+                    "description": "Maksymalne HP postaci, np. 140 dla twardego wojownika, 70 dla kupca."
+                },
+                "current_hp": {
+                    "type": "integer",
+                    "description": "Aktualne HP na start (najczęściej równe max_hp, chyba że postać już jest ranna)."
+                },
+                "gold": {
+                    "type": "integer",
+                    "description": "Startowe kredyty/złoto, np. 15 dla gladiatora, 100 dla szlachcica."
+                }
+            },
+            "required": ["max_hp", "current_hp", "gold"]
+        }
+    }
+}
+
+
 def build_rpg_system_prompt(character, inventory_list, lore_text):
     inv_str = ", ".join(inventory_list) if inventory_list else "Brak przedmiotów"
     hp = character["hp"]
@@ -130,6 +160,16 @@ def build_rpg_system_prompt(character, inventory_list, lore_text):
         f"(np. 'AKTUALNY STAN BOHATERA:', 'STATUS POSTACI:', list HP/Kredyty/Lokacja/Ekwipunek). "
         f"Gracz widzi te dane w osobnym panelu interfejsu. "
         f"Twoja odpowiedź ma zawierać WYŁĄCZNIE narrację i opcje — nic poza tym.\n\n"
+        f"⛔ ABSOLUTNY ZAKAZ — SYMULOWANIE ZMIAN W TEKŚCIE:\n"
+        f"Nigdy NIE pisz w treści odpowiedzi bloków takich jak:\n"
+        f"- '📊 Zmiany w tej turze: ...'\n"
+        f"- '🎒 Otrzymano: ...' / '🎒 Utracono: ...' jako osobna lista\n"
+        f"- '📝 Streszczenie: ...' jako wypunktowanie\n"
+        f"Te bloki są GENEROWANE AUTOMATYCZNIE przez system gry wyłącznie na podstawie WYWOŁANYCH NARZĘDZI.\n"
+        f"⚠️ KRYTYCZNE: Napisanie w tekście 'gracz otrzymuje X' NIE zapisze X do gry — "
+        f"gracz nie zobaczy tego w ekwipunku! "
+        f"JEDYNYM sposobem na zmianę stanu gry jest WYWOŁANIE NARZĘDZIA (add_inventory_item, modify_stats itp.). "
+        f"Pisanie o zmianach ZAMIAST wywołania narzędzi to BŁĄD KRYTYCZNY.\n\n"
         f"FORMAT OPCJI (na samym końcu wypowiedzi):\n"
         f"Maksymalnie 3 opcje, każda od NOWEJ LINII, format:\n"
         f"A) Krótki opis pierwszej akcji\n"
@@ -141,6 +181,12 @@ def build_rpg_system_prompt(character, inventory_list, lore_text):
 
 
 def _dispatch_tool_call(func_name, func_args):
+    if func_name == "set_starting_stats":
+        return rpg_database.set_starting_stats(
+            max_hp=func_args.get("max_hp", 100),
+            current_hp=func_args.get("current_hp", 100),
+            gold=func_args.get("gold", 50),
+        )
     if func_name == "modify_stats":
         return rpg_database.modify_stats(
             hp_change=func_args.get("hp_change", 0),
@@ -174,6 +220,26 @@ _STATUS_BLOCK_RE = re.compile(
 def _strip_status_block(text):
     """Usuwa blok statusu postaci jeśli AI go wygenerował mimo zakazu w system promptcie."""
     return _STATUS_BLOCK_RE.sub('', text).strip()
+
+
+# Dopasowuje AI-generowany blok '📊 Zmiany w tej turze' (bez separatora ---) — zarówno wieloliniowy jak i w jednej linii
+_AI_FAKE_SUMMARY_RE = re.compile(
+    r'\n*📊[^\n]*(?:Zmiany\s+w\s+tej\s+turze|ZMIANY)[^\n]*(?:\n—[^\n]*)*',
+    re.IGNORECASE,
+)
+
+
+def _strip_ai_fake_summary(text):
+    """Usuwa AI-generowany blok podsumowania zmian z odpowiedzi — system dodaje go automatycznie z tool callów."""
+    return _AI_FAKE_SUMMARY_RE.sub('', text).strip()
+
+
+def strip_changes_tail_from_history(text):
+    """Usuwa nasz auto-generowany blok '--- Zmiany w tej turze' z wiadomości historycznych przed wysłaniem do AI."""
+    idx = text.find("\n\n---\n*📊 Zmiany w tej turze:*")
+    if idx != -1:
+        return text[:idx].strip()
+    return text
 
 
 def _build_changes_summary(changes):
@@ -210,20 +276,21 @@ def _build_changes_summary(changes):
     return f"\n\n---\n*📊 Zmiany w tej turze:*\n{body}"
 
 
-def call_rpg_ai(client, model, temp, messages):
+def call_rpg_ai(client, model, temp, messages, extra_tools=None):
     """Wywołuje AI z function calling i zwraca końcową odpowiedź tekstową."""
+    tools = RPG_TOOLS + (extra_tools or [])
     response = client.chat.completions.create(
         model=model,
         messages=messages,
         temperature=temp,
-        tools=RPG_TOOLS,
+        tools=tools,
         tool_choice="auto",
     )
     response_message = response.choices[0].message
     tool_calls = response_message.tool_calls
 
     if not tool_calls:
-        return response_message.content or ""
+        return _strip_ai_fake_summary(response_message.content or "")
 
     # Gemini często umieszcza narrację w content pierwszej odpowiedzi,
     # a po przetworzeniu tool calls zwraca tylko opcje (lub None).
@@ -250,7 +317,7 @@ def call_rpg_ai(client, model, temp, messages):
     second_content = (second_response.choices[0].message.content or "").strip()
 
     parts = [p for p in [first_content, second_content] if p]
-    combined = _strip_status_block("\n\n".join(parts))
+    combined = _strip_status_block(_strip_ai_fake_summary("\n\n".join(parts)))
     return combined + _build_changes_summary(changes)
 
 
@@ -259,8 +326,18 @@ def generate_opening_scene(client, model, temp, character, lore_text):
     system_prompt = build_rpg_system_prompt(character, [], lore_text)
     intro_request = (
         f"Zacznij nową kampanię dla postaci o imieniu {character['name']} ({character['class']}). "
-        f"Napisz wciągające, klimatyczne wprowadzenie do świata opisanego w kodeksie — minimum 4-5 zdań "
-        f"narracji opisujących otoczenie, atmosferę i sytuację startową bohatera. "
+        f"KROK 1 — OBOWIĄZKOWO wywołaj narzędzie set_starting_stats, aby ustawić startowe HP i kredyty "
+        f"odpowiednie dla klasy '{character['class']}' i realiów świata. "
+        f"Przykładowe wartości (dostosuj do klasy i świata):\n"
+        f"- Wojownik/gladiator/żołnierz → max_hp: 120-140, gold: 10-25\n"
+        f"- Złodziej/skrytobójca/zwiadowca → max_hp: 80-95, gold: 25-45\n"
+        f"- Mag/kapłan/szaman → max_hp: 55-75, gold: 40-65\n"
+        f"- Kupiec/szlachcic/polityk → max_hp: 65-85, gold: 80-130\n"
+        f"- Medyk/rzemieślnik/uczony → max_hp: 75-95, gold: 45-70\n"
+        f"- Łowca/zwiadowca/ranger → max_hp: 90-110, gold: 15-35\n"
+        f"Bądź kreatywny i spójny z realiami kodeksu. "
+        f"KROK 2 — Napisz wciągające, klimatyczne wprowadzenie do świata — minimum 4-5 zdań "
+        f"opisujących otoczenie, atmosferę i sytuację startową bohatera. "
         f"Narracja MUSI być w 100% spójna z realiami kodeksu — żadnych anachronizmów. "
         f"Na końcu podaj 3 opcje pierwszych działań pasujące do tego świata i klasy postaci."
     )
@@ -268,4 +345,4 @@ def generate_opening_scene(client, model, temp, character, lore_text):
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": intro_request},
     ]
-    return call_rpg_ai(client, model, temp, messages)
+    return call_rpg_ai(client, model, temp, messages, extra_tools=[STARTING_STATS_TOOL])
