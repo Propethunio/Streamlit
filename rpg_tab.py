@@ -40,29 +40,31 @@ def render_sidebar_rpg():
 
 def _extract_options(text):
     """
-    Wyciąga opcje A)/B)/C) z KOŃCA tekstu MG.
-    Skanuje od ostatniej linii w górę — wszystko przed pierwszą linią opcji to narracja.
-    Dzięki temu 'A)' w środku tekstu fabularnego nie jest mylnie traktowane jako opcja.
-    Zwraca (tekst_narracji, lista_opcji).
+    Wyciąga ostatni ciągły blok opcji A)/B)/C) z tekstu MG.
+    Narracja = tekst PRZED blokiem + tekst PO bloku (Gemini czasem daje opcje na początku).
+    Obsługuje formaty: "A) tekst", "**A)** tekst", "**A) tekst**".
     """
     if not text:
         return "", []
 
     lines = text.split("\n")
-    option_map = {}      # litera → treść opcji
-    first_option_idx = len(lines)
+    # Obsługuje opcjonalne ** przed/po literze i nawiasie
+    _OPT = re.compile(r"^\*{0,2}([A-C])\)\*{0,2}\s*(.+)")
 
-    # Obsługuje formaty: "A) tekst", "**A)** tekst", "**A) tekst**", "A. tekst", "A- tekst"
-    _OPT = re.compile(r"^\*{0,2}([A-C])[).\-]\*{0,2}\s*(.+)", re.IGNORECASE)
+    option_map = {}
+    first_option_idx = len(lines)
+    last_option_idx = -1
 
     for i in range(len(lines) - 1, -1, -1):
         stripped = lines[i].strip()
         m = _OPT.match(stripped)
         if m:
-            letter = m.group(1).upper()
+            letter = m.group(1)
             content = re.sub(r"\*+$", "", m.group(2)).strip()
             option_map[letter] = content
             first_option_idx = i
+            if last_option_idx == -1:
+                last_option_idx = i
         elif stripped == "" and option_map:
             continue
         elif option_map:
@@ -71,7 +73,14 @@ def _extract_options(text):
     if len(option_map) < 2:
         return text, []
 
-    story = "\n".join(lines[:first_option_idx]).strip()
+    # Narracja = to co PRZED blokiem opcji + to co PO bloku opcji
+    before = "\n".join(lines[:first_option_idx]).rstrip()
+    after = "\n".join(lines[last_option_idx + 1:]).lstrip()
+    if before and after:
+        story = before + "\n\n" + after
+    else:
+        story = (before + after).strip()
+
     options = [option_map[k] for k in sorted(option_map.keys())]
     return story, options
 
