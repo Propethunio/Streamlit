@@ -8,6 +8,7 @@ from openai import OpenAI
 import rpg_database
 from chat_tab import render_chat_tab, render_sidebar_chat
 from rpg_tab import render_rpg_tab, render_sidebar_rpg
+from game_lore import GAME_CODEX, DEFAULT_LORE_NAME, load_default_lore_pdf_bytes
 from styles import NEON_CSS
 
 # --- KONFIGURACJA STRONY ---
@@ -36,6 +37,12 @@ for _key, _val in _DEFAULTS.items():
 if "rpg_messages" not in st.session_state:
     history = rpg_database.get_chat_history()
     st.session_state.rpg_messages = history or []
+
+# Kodeks świata RPG — domyślny (game_lore.pdf) lub własny PDF wgrany przez gracza
+if "rpg_lore_text" not in st.session_state:
+    st.session_state.rpg_lore_text = GAME_CODEX
+    st.session_state.rpg_lore_name = DEFAULT_LORE_NAME
+    st.session_state.rpg_lore_pdf = load_default_lore_pdf_bytes()
 
 MODELS = [
     "gemini-3.1-flash-lite",
@@ -70,6 +77,11 @@ def full_factory_reset():
     st.session_state.indexed_files = []
     st.session_state.sys_prompt = "Jesteś pomocnym asystentem AI."
     st.session_state.pop("custom_prompt_value", None)
+    st.session_state.rpg_lore_text = GAME_CODEX
+    st.session_state.rpg_lore_name = DEFAULT_LORE_NAME
+    st.session_state.rpg_lore_pdf = load_default_lore_pdf_bytes()
+    st.session_state.pop("rpg_lore_file_id", None)
+    st.session_state.pop("rpg_lore_upload", None)
     st.session_state.reset_key += 1
     rpg_database.clear_all_rpg_data()
     st.cache_data.clear()
@@ -110,7 +122,8 @@ with st.sidebar:
     )
 
 # --- MAIN ---
-st.markdown('<h1 class="big-title">NEON GEMINI ADVANCED</h1>', unsafe_allow_html=True)
+main_title = "NEON GEMINI ADVANCED" if app_mode == "💬 ASYSTENT & RAG CHAT" else "NEON: KRONIKI MROKU"
+st.markdown(f'<h1 class="big-title">{main_title}</h1>', unsafe_allow_html=True)
 
 if app_mode == "💬 ASYSTENT & RAG CHAT":
     render_chat_tab(client, selected_model, temp, file_content, image_payload, text_to_speech)

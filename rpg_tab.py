@@ -2,12 +2,71 @@ import re
 import streamlit as st
 import streamlit.components.v1 as components
 import rpg_database
+import docloader
 from rpg_engine import build_rpg_system_prompt, call_rpg_ai, RPG_INITIAL_SCENE
+from game_lore import GAME_CODEX, DEFAULT_LORE_NAME, load_default_lore_pdf_bytes
 from styles import THINKING_BOX_HTML, SCROLL_TO_BOTTOM_JS
+
+
+@st.dialog("📖 Kodeks Świata", width="large")
+def _show_codex_dialog():
+    st.caption(f"Aktywny świat: {st.session_state.get('rpg_lore_name', DEFAULT_LORE_NAME)}")
+    st.markdown(st.session_state.get("rpg_lore_text", GAME_CODEX))
+
+
+def _render_codex_controls():
+    """Panel kodeksu: podgląd, pobranie wzorcowego PDF, podmiana świata na własny PDF."""
+    with st.expander("📖 KODEKS ŚWIATA"):
+        st.caption(f"Aktywny świat: **{st.session_state.get('rpg_lore_name', DEFAULT_LORE_NAME)}**")
+
+        if st.button("👁️ Podejrzyj kodeks", use_container_width=True, key="rpg_codex_view"):
+            _show_codex_dialog()
+
+        pdf_bytes = st.session_state.get("rpg_lore_pdf")
+        if pdf_bytes:
+            st.download_button(
+                "⬇️ Pobierz PDF kodeksu",
+                data=pdf_bytes,
+                file_name="kodeks_swiata.pdf",
+                mime="application/pdf",
+                use_container_width=True,
+                key="rpg_codex_dl",
+            )
+
+        custom = st.file_uploader("Wgraj własny świat (PDF):", type=["pdf"], key="rpg_lore_upload")
+        if custom is not None:
+            marker = getattr(custom, "file_id", None) or f"{custom.name}:{custom.size}"
+            if marker != st.session_state.get("rpg_lore_file_id"):
+                try:
+                    text = docloader.load_pdf_from_stream(custom)
+                except Exception as e:
+                    st.error(f"Nie udało się wczytać PDF: {e}")
+                    text = ""
+                if text.strip():
+                    st.session_state.rpg_lore_text = text.strip()
+                    st.session_state.rpg_lore_name = custom.name
+                    st.session_state.rpg_lore_pdf = custom.getvalue()
+                    st.session_state.rpg_lore_file_id = marker
+                    st.success("Świat podmieniony! Mistrz Gry użyje nowego kodeksu.")
+                    st.rerun()
+                else:
+                    st.warning("Ten PDF nie zawiera czytelnego tekstu.")
+
+        if st.session_state.get("rpg_lore_name", DEFAULT_LORE_NAME) != DEFAULT_LORE_NAME:
+            if st.button("♻️ Przywróć domyślny świat", use_container_width=True, key="rpg_lore_reset"):
+                st.session_state.rpg_lore_text = GAME_CODEX
+                st.session_state.rpg_lore_name = DEFAULT_LORE_NAME
+                st.session_state.rpg_lore_pdf = load_default_lore_pdf_bytes()
+                st.session_state.pop("rpg_lore_file_id", None)
+                st.session_state.pop("rpg_lore_upload", None)  # wyczyść widget uploadera
+                st.rerun()
 
 
 def render_sidebar_rpg():
     st.markdown("<h4 style='color: #8a2be2; margin-top:-5px;'>👤 STATUS POSTACI RPG</h4>", unsafe_allow_html=True)
+
+    _render_codex_controls()
+
     character = rpg_database.get_character()
     if not character:
         st.info("Brak bohatera. Stwórz go na głównym ekranie.")
@@ -102,7 +161,8 @@ def _process_active_action(client, model, temp):
 
     character = rpg_database.get_character()
     inv_list = [f"{i['name']} (x{i['qty']})" for i in rpg_database.get_inventory()]
-    system_prompt = build_rpg_system_prompt(character, inv_list)
+    lore_text = st.session_state.get("rpg_lore_text", GAME_CODEX)
+    system_prompt = build_rpg_system_prompt(character, inv_list, lore_text)
 
     history = rpg_database.get_chat_history()
     send_messages = [{"role": "system", "content": system_prompt}]
@@ -194,6 +254,21 @@ def render_rpg_tab(client, model, temp, text_to_speech_fn):
         with st.chat_message("user", avatar="👤"):
             st.markdown(pending_action)
         _process_active_action(client, model, temp)
+
+    elif character["hp"] <= 0:
+        st.markdown(
+            '<p style="text-align:center; font-size:28px; font-weight:800; '
+            'color:#ff2a5f; margin:8px 0 4px;">☠️ ZGINĄŁEŚ</p>'
+            '<p style="text-align:center; font-size:15px; color:#b4c6ef; margin-bottom:18px;">'
+            'Twoja przygoda dobiegła końca w mroku Sektora 7. '
+            'Zresetuj opowieść, aby narodzić się na nowo.</p>',
+            unsafe_allow_html=True,
+        )
+        if st.button("💀 ZRESETUJ OPOWIEŚĆ I ZACZNIJ OD NOWA", use_container_width=True, type="primary"):
+            rpg_database.clear_all_rpg_data()
+            st.session_state.rpg_messages = []
+            st.session_state.last_rpg_image = None
+            st.rerun()
 
     elif len(options) >= 2:
         st.markdown(
