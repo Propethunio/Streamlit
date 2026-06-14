@@ -1,4 +1,5 @@
 import json
+import re
 import rpg_database
 
 RPG_TOOLS = [
@@ -124,6 +125,11 @@ def build_rpg_system_prompt(character, inventory_list, lore_text):
         f"2. Kiedy gracz wykonuje akcję, która logicznie go rani, leczy, kosztuje pieniądze lub daje zarobek – WYWOŁAJ funkcję `modify_stats`.\n"
         f"3. Kiedy gracz znajduje, kupuje przedmiot lub go zużywa/traci – WYWOŁAJ `add_inventory_item` lub `remove_inventory_item`.\n"
         f"4. Jeśli gracz próbuje użyć przedmiotu, którego nie ma w wyżej wymienionym Ekwipunku, opisz w opowiadaniu niepowodzenie z powodu braku zasobów.\n\n"
+        f"⛔ ABSOLUTNY ZAKAZ — BLOK STATUSU POSTACI:\n"
+        f"Nigdy nie dodawaj do odpowiedzi bloku z aktualnym stanem bohatera "
+        f"(np. 'AKTUALNY STAN BOHATERA:', 'STATUS POSTACI:', list HP/Kredyty/Lokacja/Ekwipunek). "
+        f"Gracz widzi te dane w osobnym panelu interfejsu. "
+        f"Twoja odpowiedź ma zawierać WYŁĄCZNIE narrację i opcje — nic poza tym.\n\n"
         f"FORMAT OPCJI (na samym końcu wypowiedzi):\n"
         f"Maksymalnie 3 opcje, każda od NOWEJ LINII, format:\n"
         f"A) Krótki opis pierwszej akcji\n"
@@ -154,6 +160,20 @@ def _dispatch_tool_call(func_name, func_args):
             quantity=func_args.get("quantity", 1),
         )
     return f"Nieznane narzędzie: {func_name}"
+
+
+# Dopasowuje cały blok: nagłówek STAN/STATUS BOHATERA + linie z polami aż do pustej linii lub końca
+_STATUS_BLOCK_RE = re.compile(
+    r'\n*[^\n]*(?:STAN\s+BOHATERA|STATUS\s+(?:BOHATERA|POSTACI)|AKTUALNE?\s+(?:STAN|STATYSTYKI))[^\n]*\n'
+    r'\n?'           # opcjonalna pusta linia po nagłówku
+    r'(?:[^\n]+\n?)*',  # kolejne niepuste linie aż do pustej lub końca tekstu
+    re.IGNORECASE,
+)
+
+
+def _strip_status_block(text):
+    """Usuwa blok statusu postaci jeśli AI go wygenerował mimo zakazu w system promptcie."""
+    return _STATUS_BLOCK_RE.sub('', text).strip()
 
 
 def _build_changes_summary(changes):
@@ -230,7 +250,7 @@ def call_rpg_ai(client, model, temp, messages):
     second_content = (second_response.choices[0].message.content or "").strip()
 
     parts = [p for p in [first_content, second_content] if p]
-    combined = "\n\n".join(parts)
+    combined = _strip_status_block("\n\n".join(parts))
     return combined + _build_changes_summary(changes)
 
 
