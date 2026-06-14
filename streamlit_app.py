@@ -252,7 +252,7 @@ if app_mode == "💬 ASYSTENT & RAG CHAT":
             except Exception as e: status.empty(); st.error(f"Błąd: {str(e)}")
 
 # =====================================================================
-# SEKCJA RPG Z ZASTOSOWANIEM DYNAMICZNEGO FUNCTION CALLING
+# SEKCJA RPG Z ZASTOSOWANIEM DYNAMICZNEGO FUNCTION CALLING + TTS
 # =====================================================================
 else:
     character = rpg_database.get_character()
@@ -274,9 +274,15 @@ else:
         if st.session_state.last_rpg_image:
             st.image(st.session_state.last_rpg_image, caption=f"Bieżąca lokacja: {character['location']}", use_container_width=True)
 
-        for msg in st.session_state.rpg_messages:
+        # --- POPRAWIONE RENDEROWANIE HISTORII Z OBSŁUGĄ TTS ---
+        for i, msg in enumerate(st.session_state.rpg_messages):
             with st.chat_message(msg["role"], avatar="👤" if msg["role"]=="user" else "🧙‍♂️"):
                 st.markdown(msg["content"])
+                # Dodajemy przycisk audio dla odpowiedzi Mistrza Gry (asystenta)
+                if msg["role"] == "assistant" and st.button(f"🔊 Odsłuchaj", key=f"tts_rpg_{i}"):
+                    html = text_to_speech(msg["content"], tts_mode)
+                    if html: 
+                        st.markdown(html, unsafe_allow_html=True)
 
         if rpg_prompt := st.chat_input("Wpisz swoją akcję lub wybierz opcję...", key="rpg_input_field"):
             rpg_database.save_chat_message("user", rpg_prompt)
@@ -356,7 +362,6 @@ else:
                 status = st.empty(); status.markdown('<div class="thinking-box"><div class="loader"></div><span>Mistrz Gry przetwarza akcję i oblicza modyfikatory...</span></div>', unsafe_allow_html=True)
                 
                 try:
-                    # Wywołanie z obsługą narzędzi (stabilne stream=False)
                     response = client.chat.completions.create(
                         model=selected_model, 
                         messages=rpg_messages_to_send, 
@@ -368,16 +373,13 @@ else:
                     response_message = response.choices[0].message
                     tool_calls = response_message.tool_calls
                     
-                    # KROK A: Jeśli AI postanowiło wywołać funkcje bazodanowe
                     if tool_calls:
-                        # Dołączamy intencję wywołania narzędzi przez AI do historii wysyłanej do API
                         rpg_messages_to_send.append(response_message)
                         
                         for tool_call in tool_calls:
                             func_name = tool_call.function.name
-                            func_args = json.loads(tool_call.function.argv if hasattr(tool_call.function, 'argv') else tool_call.function.arguments)
+                            func_args = json.loads(tool_call.function.arguments)
                             
-                            # Mapowanie i fizyczna egzekucja metod Pythona
                             if func_name == "modify_stats":
                                 db_result = rpg_database.modify_stats(
                                     hp_change=func_args.get("hp_change", 0),
@@ -397,7 +399,6 @@ else:
                                     quantity=func_args.get("quantity", 1)
                                 )
                             
-                            # Odsyłamy wynik wykonania kodu z bazy z powrotem do AI
                             rpg_messages_to_send.append({
                                 "role": "tool",
                                 "tool_call_id": tool_call.id,
@@ -405,7 +406,6 @@ else:
                                 "content": db_result
                             })
                         
-                        # Generujemy ostateczny tekst przygody uwzględniający nowe dane z bazy
                         second_response = client.chat.completions.create(model=selected_model, messages=rpg_messages_to_send, temperature=temp)
                         full_rpg_response = second_response.choices[0].message.content
                     else:
