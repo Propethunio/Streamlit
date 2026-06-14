@@ -1,58 +1,62 @@
 import faiss
 import numpy as np
+import streamlit as st
 from langchain_huggingface import HuggingFaceEmbeddings
+
+_EMBED_MODEL_ID = "sentence-transformers/all-MiniLM-L6-v2"
+_CHUNK_SIZE = 800
+_CHUNK_OVERLAP = 150
+
 
 class FAISSIndex:
     def __init__(self, faiss_index, metadata):
         self.index = faiss_index
         self.metadata = metadata
 
-    def similarity_search(self, query, k=3):
-        D, I = self.index.search(query, k)
-        results = []
-        for idx in I[0]:
-            if 0 <= idx < len(self.metadata):
-                results.append(self.metadata[idx])
-        return results
+    def similarity_search(self, query_vector, k=3):
+        _, indices = self.index.search(query_vector, k)
+        return [
+            self.metadata[idx]
+            for idx in indices[0]
+            if 0 <= idx < len(self.metadata)
+        ]
 
-embed_model_id = "sentence-transformers/all-MiniLM-L6-v2" # nazwa modelu
-model_kwargs = {"device": "cpu", "trust_remote_code": True}
+
+@st.cache_resource
+def _get_embeddings():
+    """Ładuje model embeddingów raz i cachuje go przez cały czas życia aplikacji."""
+    return HuggingFaceEmbeddings(
+        model_name=_EMBED_MODEL_ID,
+        model_kwargs={"device": "cpu", "trust_remote_code": True},
+    )
+
 
 def create_index(documents):
-    """Tworzy indeks FAISS, dzieląc dokumenty na mniejsze fragmenty."""
-    embeddings = HuggingFaceEmbeddings(model_name=embed_model_id, model_kwargs=model_kwargs)
-    
-    chunks = []
-    metadata = []
-    
-    # Podział dużego tekstu na fragmenty po ok. 800 znaków (z zakładką 150)
+    """Tworzy indeks FAISS, dzieląc dokumenty na fragmenty po ~800 znaków."""
+    embeddings = _get_embeddings()
+    chunks, metadata = [], []
+
     for doc in documents:
-        text_content = doc["text"]
-        chunk_size = 800
-        overlap = 150
+        text = doc["text"]
         i = 0
-        while i < len(text_content):
-            chunk = text_content[i:i+chunk_size]
+        while i < len(text):
+            chunk = text[i : i + _CHUNK_SIZE]
             if chunk.strip():
                 chunks.append(chunk)
                 metadata.append({"filename": doc["filename"], "text": chunk})
-            i += (chunk_size - overlap)
+            i += _CHUNK_SIZE - _CHUNK_OVERLAP
 
     if not chunks:
         return None
 
-    # Generowanie wektorów i budowanie indeksu FAISS
-    embeddings_matrix = [embeddings.embed_query(text) for text in chunks]
-    embeddings_matrix = np.array(embeddings_matrix).astype("float32")
-
-    dimension = embeddings_matrix.shape[1]
-    index = faiss.IndexFlatL2(dimension)
-    index.add(embeddings_matrix)
-
+    vectors = np.array([embeddings.embed_query(c) for c in chunks], dtype="float32")
+    index = faiss.IndexFlatL2(vectors.shape[1])
+    index.add(vectors)
     return FAISSIndex(index, metadata)
 
+
 def retrieve_docs(query, faiss_index, k=2):
-    """Przeszukuje bazę FAISS na podstawie zapytania użytkownika."""
-    embeddings = HuggingFaceEmbeddings(model_name=embed_model_id, model_kwargs=model_kwargs)
-    query_embedding = np.array([embeddings.embed_query(query)]).astype("float32")
-    return faiss_index.similarity_search(query_embedding, k)
+    """Przeszukuje indeks FAISS na podstawie zapytania użytkownika."""
+    embeddings = _get_embeddings()
+    query_vec = np.array([embeddings.embed_query(query)], dtype="float32")
+    return faiss_index.similarity_search(query_vec, k)

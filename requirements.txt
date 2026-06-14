@@ -1,9 +1,6 @@
 openai
 streamlit
-PyPDF2
 gTTS
-pandas
-openpyxl
 PyMuPDF
 faiss-cpu
 langchain-huggingface
