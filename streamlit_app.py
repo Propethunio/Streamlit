@@ -356,7 +356,8 @@ else:
             )
             
             rpg_messages_to_send = [{"role": "system", "content": rpg_system_prompt}]
-            for m in st.session_state.rpg_messages: rpg_messages_to_send.append({"role": m["role"], "content": m["content"]})
+            # Zamiast całej historii, bierzemy tylko system prompt i ostatnich 6 kroków
+            for m in st.session_state.rpg_messages[-6:]: rpg_messages_to_send.append({"role": m["role"], "content": m["content"]})
 
             with st.chat_message("assistant", avatar="🧙‍♂️"):
                 status = st.empty(); status.markdown('<div class="thinking-box"><div class="loader"></div><span>Mistrz Gry przetwarza akcję i oblicza modyfikatory...</span></div>', unsafe_allow_html=True)
