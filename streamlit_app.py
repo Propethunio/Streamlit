@@ -118,7 +118,7 @@ def render_personality_selector():
         "Cyberpunk Hacker": "Mów jak haker z przyszłości, używaj technicznego slangu, bądź tajemniczy i neonowy.",
         "Ekspert Programowania": "Jesteś genialnym programistą. Odpowiadasz czystym kodem i technicznymi konkretami.",
         "Sarkastyczny Bot": "Jesteś inteligentny, ale bardzo sarkastyczny i nieco znudzony pomaganiem ludziom.",
-        "Naukowiec": "Jesteś profesorem nauk ścisłych. Twoje odpowiedzi są bardzo szczegółowe i oparte na faktach."
+        "Naukowiec": "Jesteś profesor nauk ścisłych. Twoje odpowiedzi są bardzo szczegółowe i oparte na faktach."
     }
     if persona == "Własna (Custom)":
         default_custom = st.session_state.get("custom_prompt_value", "Jesteś pomocnym asystentem AI. Twoje zadanie to...")
@@ -283,61 +283,14 @@ else:
             st.success("Kampania zainicjalizowana pomyślnie!")
             st.rerun()
     else:
-        # Obrazek lokacji na samym dole lub górze - upewniamy się, że nie skacze
-        if st.session_state.last_rpg_image:
-            st.image(st.session_state.last_rpg_image, caption=f"Bieżąca lokacja: {character['location']}", use_container_width=True)
-
-        # --- 1. WYCIĄGANIE I WYCINANIE OPCJI DLA OSTATNIEJ WIADOMOŚCI ---
-        options = []
-        clean_last_reply = None
-        
-        if st.session_state.rpg_messages and st.session_state.rpg_messages[-1]["role"] == "assistant":
-            last_reply = st.session_state.rpg_messages[-1]["content"]
+        # --- PHASE 0: PRZETWARZANIE AKCJI PRZED WYŚWIETLENIEM STRONY (ZAPOBIEGA SKAKANIU) ---
+        if "active_rpg_action" in st.session_state and st.session_state.active_rpg_action:
+            final_action_prompt = st.session_state.active_rpg_action
+            del st.session_state.active_rpg_action  # Zapobiegamy zapętleniu
             
-            # Precyzyjny regex łapiący bloki opcji A), B), C) od nowej linii
-            found_options = re.findall(r"(?m)^([A-C])\)\s*(.+)$", last_reply)
-            if found_options:
-                options = [opt[1].strip() for opt in found_options]
-                # Usuwamy całą sekcję opcji z tekstu, żeby nie dublować ich na ekranie
-                clean_last_reply = re.sub(r"(?m)^[A-C]\)\s*.+$", "", last_reply).strip()
-
-        # --- 2. RENDEROWANIE HISTORII CHATU ---
-        for i, msg in enumerate(st.session_state.rpg_messages):
-            with st.chat_message(msg["role"], avatar="👤" if msg["role"]=="user" else "🧙‍♂️"):
-                if msg["role"] == "assistant" and i == len(st.session_state.rpg_messages) - 1 and clean_last_reply is not None:
-                    st.markdown(clean_last_reply)
-                    content_for_tts = clean_last_reply
-                else:
-                    st.markdown(msg["content"])
-                    content_for_tts = msg["content"]
-                
-                if msg["role"] == "assistant" and st.button(f"🔊 Odsłuchaj", key=f"tts_rpg_{i}"):
-                    html = text_to_speech(content_for_tts, tts_mode)
-                    if html: 
-                        st.markdown(html, unsafe_allow_html=True)
-
-        # Inicjalizacja zmiennej na akcję gracza
-        final_action_prompt = None
-
-        # --- 3. INTERFEJS DECYZJI (PRZYCISKI LUB INPUT) ---
-        st.markdown("<br>", unsafe_allow_html=True)
-        if options and len(options) >= 2:
-            st.write("### 🧭 Wybierz swoje działanie:")
-            cols = st.columns(len(options))
-            for idx, option_text in enumerate(options):
-                with cols[idx]:
-                    if st.button(option_text, use_container_width=True, type="primary" if idx == 0 else "secondary", key=f"rpg_btn_{idx}"):
-                        final_action_prompt = option_text
-        else:
-            if free_prompt := st.chat_input("Mistrz Gry nie dał gotowych opcji. Co robisz?", key="rpg_input_field"):
-                final_action_prompt = free_prompt
-
-        # Jeśli gracz podjął decyzję -> zapisujemy i natychmiast przechodzimy do generowania odpowiedzi bota
-        if final_action_prompt:
             rpg_database.save_chat_message("user", final_action_prompt)
             st.session_state.rpg_messages = rpg_database.get_chat_history()
             
-            # --- ZAMIAST ST.RERUN() - OD RAZU URUCHAMIAMY GENEROWANIE MG W TEJ SAMEJ TURZE ---
             rpg_tools = [
                 {
                     "type": "function",
@@ -468,20 +421,69 @@ else:
 
                     status.empty()
                     
-                    # Zapisujemy wygenerowaną odpowiedź
+                    # Zapisujemy odpowiedź bezpośrednio do bazy danych
                     rpg_database.save_chat_message("assistant", full_rpg_response)
                     
-                    # Generowanie obrazka odbywa się w tej samej logicznej sekwencji – przed jakimkolwiek przeładowaniem strony!
+                    # Generowanie ilustracji w tym samym liniowym kroku przed ładowaniem UI
                     with st.spinner("🖼️ Generowanie rzutu izometrycznego lokacji..."):
                         img_url = rpg_visuals.generate_game_scene(client, full_rpg_response)
                         if img_url: 
                             st.session_state.last_rpg_image = img_url
 
                     st.session_state.rpg_messages = rpg_database.get_chat_history()
-                    st.rerun()
                     
                 except Exception as e:
                     status.empty()
                     st.error(f"Błąd pętli decyzyjnej MG: {str(e)}")
+
+        # --- PHASE 1: RENDEROWANIE AKTUALNEGO OBRAZU LOKACJI ---
+        if st.session_state.last_rpg_image:
+            st.image(st.session_state.last_rpg_image, caption=f"Bieżąca lokacja: {character['location']}", use_container_width=True)
+
+        # --- PHASE 2: WYCIĄGANIE I WYCINANIE OPCJI DLA OSTATNIEJ WIADOMOŚCI ---
+        options = []
+        clean_last_reply = None
+        
+        if st.session_state.rpg_messages and st.session_state.rpg_messages[-1]["role"] == "assistant":
+            last_reply = st.session_state.rpg_messages[-1]["content"]
+            
+            # Precyzyjny regex dopasowujący bloki opcji A), B), C) od nowej linii
+            found_options = re.findall(r"(?m)^([A-C])\)\s*(.+)$", last_reply)
+            if found_options:
+                options = [opt[1].strip() for opt in found_options]
+                # Oczyszczanie tekstu: usuwamy całą sekcję opcji z głównego okna fabuły
+                clean_last_reply = re.sub(r"(?m)^[A-C]\)\s*.+$", "", last_reply).strip()
+
+        # --- PHASE 3: RENDEROWANIE HISTORII CHATU ---
+        for i, msg in enumerate(st.session_state.rpg_messages):
+            with st.chat_message(msg["role"], avatar="👤" if msg["role"]=="user" else "🧙‍♂️"):
+                if msg["role"] == "assistant" and i == len(st.session_state.rpg_messages) - 1 and clean_last_reply is not None:
+                    st.markdown(clean_last_reply)
+                    content_for_tts = clean_last_reply
+                else:
+                    st.markdown(msg["content"])
+                    content_for_tts = msg["content"]
+                
+                if msg["role"] == "assistant" and st.button(f"🔊 Odsłuchaj", key=f"tts_rpg_{i}"):
+                    html = text_to_speech(content_for_tts, tts_mode)
+                    if html: 
+                        st.markdown(html, unsafe_allow_html=True)
+
+        # --- PHASE 4: PRZYCISKI AKCJI I OBSŁUGA INPUTU ---
+        st.markdown("<br>", unsafe_allow_html=True)
+        if options and len(options) >= 2:
+            st.write("### 🧭 Wybierz swoje działanie:")
+            cols = st.columns(len(options))
+            for idx, option_text in enumerate(options):
+                with cols[idx]:
+                    # Unikalny klucz powiązany z rozmiarem historii chroni przed konfliktami widżetów
+                    if st.button(option_text, use_container_width=True, type="primary" if idx == 0 else "secondary", key=f"rpg_btn_{idx}_{len(st.session_state.rpg_messages)}"):
+                        st.session_state.active_rpg_action = option_text
+                        st.rerun()
+        else:
+            # Koło ratunkowe: Okno pisania, gdyby bot pominął opcje (według Twojego nowego promptu)
+            if free_prompt := st.chat_input("Mistrz Gry nie dał gotowych opcji. Co robisz?", key="rpg_input_field"):
+                st.session_state.active_rpg_action = free_prompt
+                st.rerun()
 
 st.markdown("""<div style="text-align: center; opacity: 0.2; font-size: 10px; margin-top: 50px;">NEON ENGINE V3.8 | LLM DYNAMIC FUNCTION CALLING INTERFACE</div>""", unsafe_allow_html=True)
