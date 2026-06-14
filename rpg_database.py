@@ -3,7 +3,6 @@ import sqlite3
 DB_NAME = "game_storage.db"
 
 def init_db():
-    """Inicjalizuje bazę danych i tworzy potrzebne tabele."""
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
     
@@ -26,8 +25,18 @@ def init_db():
         CREATE TABLE IF NOT EXISTS inventory (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             item_name TEXT NOT NULL,
-            item_type TEXT, -- np. 'broń', 'mikstura', 'kluczowy'
+            item_type TEXT,
             quantity INTEGER DEFAULT 1
+        )
+    """)
+
+    # 3. NOWA TABELA: Historia czatu RPG (do zapamiętywania kampanii)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS rpg_chat_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            role TEXT NOT NULL,
+            content TEXT NOT NULL,
+            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
         )
     """)
     
@@ -35,11 +44,13 @@ def init_db():
     conn.close()
 
 def get_character():
-    """Pobiera statystyki postaci (jeśli istnieje)."""
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
-    cursor.execute("SELECT * FROM character_stats ORDER BY id DESC LIMIT 1")
-    row = cursor.fetchone()
+    try:
+        cursor.execute("SELECT * FROM character_stats ORDER BY id DESC LIMIT 1")
+        row = cursor.fetchone()
+    except sqlite3.OperationalError:
+        row = None
     conn.close()
     
     if row:
@@ -51,28 +62,24 @@ def get_character():
     return None
 
 def create_character(name, char_class):
-    """Tworzy nową postać i czyści stary ekwipunek."""
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
-    
-    # Reset starych danych na potrzeby nowej gry
     cursor.execute("DELETE FROM character_stats")
     cursor.execute("DELETE FROM inventory")
+    cursor.execute("DELETE FROM rpg_chat_history") # Reset historii przy nowej postaci
     
     cursor.execute("""
         INSERT INTO character_stats (name, character_class, hp, max_hp, gold, current_location, story_summary)
-        VALUES (?, ?, 100, 100, 15, 'Tajemnicza Karczma', 'Budzisz się w zadymionej karczmie...')
+        VALUES (?, ?, 100, 100, 15, 'Sektor 7 - Zaułek', 'Budzisz się w deszczu...')
     """, (name, char_class))
     
-    # Dajmy coś na start do ekwipunku
-    cursor.execute("INSERT INTO inventory (item_name, item_type) VALUES ('Zardzewiały Sztylet', 'broń')")
-    cursor.execute("INSERT INTO inventory (item_name, item_type) VALUES ('Mikstura Leczenia', 'medykament')")
+    cursor.execute("INSERT INTO inventory (item_name, item_type) VALUES ('Ostrze Monomolekularne', 'broń')")
+    cursor.execute("INSERT INTO inventory (item_name, item_type) VALUES ('Stymulant Bojowy', 'medykament')")
     
     conn.commit()
     conn.close()
 
 def update_game_state(hp, gold, location, summary):
-    """Aktualizuje dynamicznie stan gry po każdym ruchu."""
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
     cursor.execute("""
@@ -84,7 +91,6 @@ def update_game_state(hp, gold, location, summary):
     conn.close()
 
 def get_inventory():
-    """Pobiera listę przedmiotów."""
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
     cursor.execute("SELECT item_name, item_type, quantity FROM inventory")
@@ -92,5 +98,36 @@ def get_inventory():
     conn.close()
     return [{"name": r[0], "type": r[1], "qty": r[2]} for r in rows]
 
-# Uruchomienie inicjalizacji przy pierwszym imporcie
+# --- NOWE FUNKCJE OBSŁUGI TRWAŁEJ HISTORII CZATU ---
+
+def save_chat_message(role, content):
+    """Zapisuje pojedynczą wypowiedź do bazy danych, aby przetrwała odświeżenie strony."""
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    cursor.execute("INSERT INTO rpg_chat_history (role, content) VALUES (?, ?)", (role, content))
+    conn.commit()
+    conn.close()
+
+def get_chat_history():
+    """Zwraca pełną historię wiadomości RPG chronologicznie."""
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT role, content FROM rpg_chat_history ORDER BY id ASC")
+        rows = cursor.fetchall()
+    except sqlite3.OperationalError:
+        rows = []
+    conn.close()
+    return [{"role": r[0], "content": r[1]} for r in rows]
+
+def clear_all_rpg_data():
+    """Całkowity reset gry RPG - czyszczenie wszystkich tabel."""
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM character_stats")
+    cursor.execute("DELETE FROM inventory")
+    cursor.execute("DELETE FROM rpg_chat_history")
+    conn.commit()
+    conn.close()
+
 init_db()
