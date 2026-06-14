@@ -52,21 +52,23 @@ def _extract_options(text):
     option_map = {}      # litera → treść opcji
     first_option_idx = len(lines)
 
+    # Obsługuje formaty: "A) tekst", "**A)** tekst", "**A) tekst**", "A. tekst", "A- tekst"
+    _OPT = re.compile(r"^\*{0,2}([A-C])[).\-]\*{0,2}\s*(.+)", re.IGNORECASE)
+
     for i in range(len(lines) - 1, -1, -1):
         stripped = lines[i].strip()
-        m = re.match(r"^([A-C])\)\s*(.+)", stripped)
+        m = _OPT.match(stripped)
         if m:
-            option_map[m.group(1)] = m.group(2).strip()
+            letter = m.group(1).upper()
+            content = re.sub(r"\*+$", "", m.group(2)).strip()
+            option_map[letter] = content
             first_option_idx = i
         elif stripped == "" and option_map:
-            # pusta linia tuż przed blokiem opcji — pomijamy
             continue
         elif option_map:
-            # napotkaliśmy normalny tekst — koniec bloku opcji
             break
 
     if len(option_map) < 2:
-        # Za mało opcji — zwracamy cały tekst bez zmian
         return text, []
 
     story = "\n".join(lines[:first_option_idx]).strip()
@@ -110,8 +112,7 @@ def _process_active_action(client, model, temp):
             full_response = call_rpg_ai(client, model, temp, send_messages)
             status.empty()
             clean_response, _ = _extract_options(full_response)
-            # Fallback: jeśli parsowanie wyczyściło cały tekst, pokaż surową odpowiedź
-            st.markdown(clean_response if clean_response else full_response)
+            st.markdown(clean_response)
         except Exception as e:
             status.empty()
             st.error(f"Błąd AI Mistrza Gry: {e}")
