@@ -123,7 +123,8 @@ def _process_active_action(client, model, temp):
             if not full_response:
                 st.error("Mistrz Gry zwrócił pustą odpowiedź. Spróbuj ponownie.")
                 return
-            st.markdown(full_response)
+            story, _ = _extract_options(full_response)
+            st.markdown(story if story else full_response)
         except Exception as e:
             status.empty()
             st.error(f"Błąd AI Mistrza Gry: {e}")
@@ -161,17 +162,21 @@ def render_rpg_tab(client, model, temp, text_to_speech_fn):
         _render_character_creation()
         return
 
-    # Faza 1: wyciąganie opcji z ostatniej wiadomości MG (tylko do przycisków)
+    # Faza 1: wyciąganie opcji z ostatniej wiadomości MG
     messages = st.session_state.rpg_messages
     options = []
 
     if messages and messages[-1]["role"] == "assistant":
         _, options = _extract_options(messages[-1]["content"])
 
-    # Faza 2: historia chatu — wyświetlamy pełny tekst bez wycinania
+    # Faza 2: historia chatu — wyświetlamy narrację bez opcji A/B/C
     for i, msg in enumerate(messages):
         with st.chat_message(msg["role"], avatar="👤" if msg["role"] == "user" else "🧙‍♂️"):
-            display_content = msg["content"]
+            if msg["role"] == "assistant":
+                story, _ = _extract_options(msg["content"])
+                display_content = story if story else msg["content"]
+            else:
+                display_content = msg["content"]
 
             st.markdown(display_content)
             if msg["role"] == "assistant" and st.button("🔊 Odsłuchaj", key=f"tts_rpg_{i}"):
