@@ -197,7 +197,18 @@ with st.sidebar:
 
     st.markdown('<hr class="custom-hr">', unsafe_allow_html=True)
     st.markdown("<h5 style='color: #b4c6ef;'>⚙️ PARAMETRY SILNIKA</h5>", unsafe_allow_html=True)
-    selected_model = st.selectbox("Model językowy:", ["gemini-2.5-flash", "gemini-2.0-flash", "gpt-4o"], key=f"model_{st.session_state.reset_key}")
+    selected_model = st.selectbox(
+        "Model językowy:", 
+        [
+            "gemini-2.5-flash", 
+            "gemini-2.5-flash-lite", 
+            "gemini-exp-1206",
+            "gemini-3.5-flash",
+            "gemini-3.1-flash-lite", 
+            "gemini-3-flash",
+        ], 
+        key=f"model_{st.session_state.reset_key}"
+    )
     temp = st.slider("Kreatywność (Temp)", 0.0, 2.0, 0.7, 0.1, key=f"temp_{st.session_state.reset_key}")
     tts_mode = st.radio("Silnik audio TTS:", ["Premium (OpenAI)", "Free (gTTS)"], key=f"tts_{st.session_state.reset_key}")
     st.markdown('<hr class="custom-hr">', unsafe_allow_html=True)
