@@ -419,7 +419,10 @@ else:
                     
                     with st.spinner("🖼️ Generowanie rzutu izometrycznego lokacji..."):
                         img_url = rpg_visuals.generate_game_scene(client, full_rpg_response)
-                        if img_url: st.session_state.last_rpg_image = img_url
+                        if img_url: 
+                            st.session_state.last_rpg_image = img_url
+                        else:
+                            st.caption("ℹ️ Nie udało się wygenerować nowej sceny. Zachowano poprzedni obraz lokacji.")
                     
                     st.session_state.rpg_messages = rpg_database.get_chat_history()
                     st.rerun()

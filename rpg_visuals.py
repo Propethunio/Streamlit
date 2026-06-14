@@ -1,36 +1,53 @@
 import streamlit as st
+import os
+import base64
+from google import genai
+from google.genai import types
 
-def generate_game_scene(client, scene_description):
+def generate_game_scene(client_not_used, story_text):
     """
-    Na podstawie opisu sytuacji generuje prompt, 
-    a następnie gotowy obraz z DALL-E 3.
+    Generuje darmowy obraz lokacji przy użyciu Google Imagen 3 na podstawie klucza GEMINI.
     """
     try:
-        # 1. Poproś model o zamianę opisu przygody na profesjonalny prompt dla DALL-E
-        system_refiner = "Convert the given RPG story event into a concise, detailed English image generation prompt. Style: Cinematic dark fantasy concept art, highly detailed, moody lighting."
+        # Pobieramy klucz API bezpośrednio z secrets Streamlita lub zmiennych środowiskowych
+        api_key = st.secrets.get("API_KEY", os.environ.get("GEMINI_API_KEY", ""))
         
-        response = client.chat.completions.create(
-            model="gemini-2.5-flash", # lub gpt-4o, zależnie czego używasz
-            messages=[
-                {"role": "system", "content": system_refiner},
-                {"role": "user", "content": f"Zamień to zdarzenie w prompt artystyczny: {scene_description}"}
-            ],
-            temperature=0.6
+        if not api_key:
+            st.warning("⚠️ Brak klucza API dla Imagen 3 w secrets.")
+            return None
+            
+        # Inicjalizacja dedykowanego klienta Google GenAI
+        ai_client = genai.Client(api_key=api_key)
+        
+        # Przygotowanie bezpiecznego i klimatycznego promptu dla cyberpunku
+        refined_prompt = (
+            f"Cyberpunk isometric video game scene, neon lighting, dark atmospheric, "
+            f"detailed digital art, high quality illustration, based on this scene: {story_text[:150]}"
         )
         
-        refined_prompt = response.choices[0].message.content
-        
-        # 2. Wygeneruj obraz za pomocą DALL-E 3
-        image_response = client.images.generate(
-            model="dall-e-3",
+        # Wywołanie darmowego modelu Imagen 3
+        result = ai_client.models.generate_images(
+            model='imagen-3.0-generate-002',
             prompt=refined_prompt,
-            size="1024x1024",
-            quality="standard",
-            n=1
+            config=types.GenerateImagesConfig(
+                number_of_images=1,
+                output_mime_type="image/jpeg",
+                aspect_ratio="1:1",
+                person_generation="ALLOW_ADULT", # Zapobiega blokowaniu humanoidalnych postaci/wrogów
+                safety_filter_level="BLOCK_MEDIUM_AND_ABOVE"
+            )
         )
         
-        return image_response.data[0].url
+        # Pobieramy bajty obrazu prosto z odpowiedzi API
+        generated_image = result.generated_images[0]
+        image_bytes = generated_image.image.image_bytes
+        
+        # Konwertujemy do Base64, aby Streamlit mógł wyświetlić obraz lokalnie (nie wygaśnie po godzinie)
+        b64_img = base64.b64encode(image_bytes).decode("utf-8")
+        data_url = f"data:image/jpeg;base64,{b64_img}"
+        
+        return data_url
+
     except Exception as e:
-        # Jeśli brakuje środków na API lub wystąpi błąd, zwracamy None, by nie crashować gry
-        print(f"Błąd generowania obrazu: {e}")
+        st.warning(f"⚠️ Problem z darmowym Google Imagen: {str(e)}")
         return None
