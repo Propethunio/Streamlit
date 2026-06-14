@@ -82,34 +82,4 @@ h1 a[href], h2 a[href], h3 a[href] { display: none !important; }
 
 THINKING_BOX_HTML = '<div class="thinking-box"><div class="loader"></div><span>{message}</span></div>'
 
-# JS scrollujący do dołu strony — działa przez iframe komponentu Streamlit
-SCROLL_TO_BOTTOM_JS = """
-<script>
-(function() {
-    function scrollToBottom() {
-        var doc = window.parent.document;
-        var scrolled = false;
-        var selectors = [
-            '[data-testid="stMainBlockContainer"]',
-            '[data-testid="stAppViewBlockContainer"]',
-            '[data-testid="stAppViewContainer"]',
-            'section.main',
-            '.main'
-        ];
-        for (var i = 0; i < selectors.length; i++) {
-            var el = doc.querySelector(selectors[i]);
-            if (el && el.scrollHeight > el.clientHeight) {
-                el.scrollTop = el.scrollHeight;
-                scrolled = true;
-            }
-        }
-        if (!scrolled) {
-            doc.documentElement.scrollTop = doc.documentElement.scrollHeight;
-        }
-    }
-    scrollToBottom();
-    setTimeout(scrollToBottom, 150);
-    setTimeout(scrollToBottom, 500);
-})();
-</script>
-"""
+SCROLL_TO_BOTTOM_JS = ""  # nieużywane — scroll obsługuje natywny st.chat_input Streamlita

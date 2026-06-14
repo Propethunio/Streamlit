@@ -157,37 +157,36 @@ def _dispatch_tool_call(func_name, func_args):
 
 
 def _build_changes_summary(changes):
-    """Buduje czytelne podsumowanie zmian statystyk/ekwipunku/lokacji z listy tool callów."""
-    lines = []
+    """Buduje zwięzłą notkę o zmianach tej tury (tylko delta, nie pełny stan postaci)."""
+    parts = []
     for func_name, func_args in changes:
         if func_name == "modify_stats":
             hp = func_args.get("hp_change", 0)
             gold = func_args.get("gold_change", 0)
             loc = func_args.get("new_location")
             if hp < 0:
-                lines.append(f"❤️ Stracono **{abs(hp)} HP**")
+                parts.append(f"−{abs(hp)} HP")
             elif hp > 0:
-                lines.append(f"❤️ Odzyskano **{hp} HP**")
+                parts.append(f"+{hp} HP")
             if gold < 0:
-                lines.append(f"💰 Stracono **{abs(gold)} kredytów**")
+                parts.append(f"−{abs(gold)} ₵")
             elif gold > 0:
-                lines.append(f"💰 Zdobyto **{gold} kredytów**")
+                parts.append(f"+{gold} ₵")
             if loc:
-                lines.append(f"📍 Lokacja: **{loc}**")
+                parts.append(f"→ {loc}")
         elif func_name == "add_inventory_item":
             name = func_args.get("item_name", "?")
             qty = func_args.get("quantity", 1)
             suffix = f" ×{qty}" if qty > 1 else ""
-            lines.append(f"🎒 Otrzymano: **{name}**{suffix}")
+            parts.append(f"+{name}{suffix}")
         elif func_name == "remove_inventory_item":
             name = func_args.get("item_name", "?")
             qty = func_args.get("quantity", 1)
             suffix = f" ×{qty}" if qty > 1 else ""
-            lines.append(f"🎒 Utracono: **{name}**{suffix}")
-    if not lines:
+            parts.append(f"−{name}{suffix}")
+    if not parts:
         return ""
-    body = "\n".join(f"— {l}" for l in lines)
-    return f"\n\n---\n*📊 Zmiany w tej turze:*\n{body}"
+    return "\n\n`[ " + "  ·  ".join(parts) + " ]`"
 
 
 def call_rpg_ai(client, model, temp, messages):

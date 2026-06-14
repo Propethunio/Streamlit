@@ -1,9 +1,8 @@
 import base64
 import streamlit as st
-import streamlit.components.v1 as components
 import docloader
 import embedder_rag
-from styles import THINKING_BOX_HTML, SCROLL_TO_BOTTOM_JS
+from styles import THINKING_BOX_HTML
 
 PERSONA_PROMPTS = {
     "Asystent (Standard)": "Jesteś pomocnym asystentem AI.",
@@ -143,4 +142,3 @@ def render_chat_tab(client, model, temp, file_content, image_payload, text_to_sp
                 status.empty()
                 st.error(f"Błąd: {e}")
 
-    components.html(SCROLL_TO_BOTTOM_JS, height=1)

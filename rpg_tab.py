@@ -1,12 +1,10 @@
 import re
-import time
 import streamlit as st
-import streamlit.components.v1 as components
 import rpg_database
 import docloader
 from rpg_engine import build_rpg_system_prompt, call_rpg_ai, generate_opening_scene
 from game_lore import GAME_CODEX, DEFAULT_LORE_NAME, load_default_lore_pdf_bytes
-from styles import THINKING_BOX_HTML, SCROLL_TO_BOTTOM_JS
+from styles import THINKING_BOX_HTML
 
 
 @st.dialog("📖 Kodeks Świata", width="large")
@@ -146,11 +144,6 @@ def _extract_options(text):
     return story, options
 
 
-def _scroll():
-    token = int(time.time() * 1000) % 999983  # unikalny token — wymusza reexekucję JS
-    js = SCROLL_TO_BOTTOM_JS.replace("__TOKEN__", str(token))
-    components.html(js, height=0, scrolling=False)
-
 
 def _process_active_action(client, model, temp):
     """
@@ -275,10 +268,8 @@ def render_rpg_tab(client, model, temp, text_to_speech_fn):
     pending_action = st.session_state.get("active_rpg_action")
 
     if pending_action:
-        # Pokaż wiadomość gracza od razu, potem przetwarzaj inline (bez ślepego rerunu)
         with st.chat_message("user", avatar="👤"):
             st.markdown(pending_action)
-        _scroll()  # scrolluj zanim AI zacznie "myśleć" — żeby thinking box był widoczny
         _process_active_action(client, model, temp)
 
     elif character["hp"] <= 0:
@@ -296,23 +287,24 @@ def render_rpg_tab(client, model, temp, text_to_speech_fn):
             st.session_state.last_rpg_image = None
             st.rerun()
 
-    elif len(options) >= 2:
-        st.markdown(
-            '<p style="text-align:center; font-size:20px; font-weight:700; '
-            'color:#b4c6ef; margin:8px 0 14px;">🧭 Wybierz swoje działanie:</p>',
-            unsafe_allow_html=True,
-        )
-        cols = st.columns(len(options))
-        for idx, option_text in enumerate(options):
-            with cols[idx]:
-                if st.button(option_text, use_container_width=True, key=f"rpg_btn_{idx}_{len(messages)}"):
-                    st.session_state.active_rpg_action = option_text
-                    st.rerun()
-
     else:
-        if free_prompt := st.chat_input("Mistrz Gry nie dał gotowych opcji. Co robisz?", key="rpg_input_field"):
+        # Przyciski opcji A/B/C jako skróty (gdy dostępne)
+        if len(options) >= 2:
+            st.markdown(
+                '<p style="text-align:center; font-size:20px; font-weight:700; '
+                'color:#b4c6ef; margin:8px 0 14px;">🧭 Wybierz swoje działanie:</p>',
+                unsafe_allow_html=True,
+            )
+            cols = st.columns(len(options))
+            for idx, option_text in enumerate(options):
+                with cols[idx]:
+                    if st.button(option_text, use_container_width=True, key=f"rpg_btn_{idx}_{len(messages)}"):
+                        st.session_state.active_rpg_action = option_text
+                        st.rerun()
+
+        # st.chat_input jest zawsze widoczny — triggery natywny scroll Streamlita
+        # oraz umożliwia wpisanie własnej akcji w dowolnym momencie
+        placeholder = "Wpisz własną akcję..." if options else "Mistrz Gry czeka. Co robisz?"
+        if free_prompt := st.chat_input(placeholder, key="rpg_input_field"):
             st.session_state.active_rpg_action = free_prompt
             st.rerun()
-
-    # Scroll do dołu — działa zarówno po przełączeniu na zakładkę jak i po nowej wiadomości
-    _scroll()
