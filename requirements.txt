@@ -8,3 +8,4 @@ PyMuPDF
 faiss-cpu
 langchain-huggingface
 sentence-transformers
+google-genai
