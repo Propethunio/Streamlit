@@ -5,6 +5,7 @@ import pandas as pd
 from gtts import gTTS
 import io
 import json
+import re
 from datetime import datetime
 
 # Importy modułów
@@ -200,11 +201,11 @@ with st.sidebar:
     selected_model = st.selectbox(
         "Model językowy:", 
         [
+            "gemini-3.1-flash-lite",
+            "gemini-3.5-flash", 
             "gemini-2.5-flash", 
             "gemini-2.5-flash-lite", 
             "gemini-exp-1206",
-            "gemini-3.5-flash",
-            "gemini-3.1-flash-lite", 
             "gemini-3-flash",
         ], 
         key=f"model_{st.session_state.reset_key}"
@@ -276,7 +277,7 @@ else:
             
         if st.button("🌌 ZAPISZ POSTAĆ W BAZIE I STWÓRZ ŚWIAT", use_container_width=True):
             rpg_database.create_character(hero_name, hero_class)
-            initial_text = f"Witaj, {hero_name} ({hero_class}). Budzisz się w mrocznym, skąpanym w kwaśnym deszczu zaułku sektora 7. W dłoni ściskasz uszkodzony cyber-dek. Słyszysz zbliżające się kroki strażników korporacji Arasaka. Co robisz?"
+            initial_text = "Witaj, " + hero_name + " (" + hero_class + "). Budzisz się w mrocznym, skąpanym w kwaśnym deszczu zaułku sektora 7. W dłoni ściskasz uszkodzony cyber-dek. Słyszysz zbliżające się kroki strażników korporacji Arasaka.\n\nA) Spróbuj zhakować pobliską skrzynkę bezpieczników, by zgasić neony i ukryć się w cieniu.\nB) Przygotuj się do walki wręcz i poczekaj w zasadzce.\nC) Wybiegnij na główną aleję, próbując zgubić pościg w tłumie."
             rpg_database.save_chat_message("assistant", initial_text)
             st.session_state.rpg_messages = rpg_database.get_chat_history()
             st.success("Kampania zainicjalizowana pomyślnie!")
@@ -285,23 +286,48 @@ else:
         if st.session_state.last_rpg_image:
             st.image(st.session_state.last_rpg_image, caption=f"Bieżąca lokacja: {character['location']}", use_container_width=True)
 
-        # --- POPRAWIONE RENDEROWANIE HISTORII Z OBSŁUGĄ TTS ---
+        # --- RENDEROWANIE HISTORII Z OBSŁUGĄ TTS ---
         for i, msg in enumerate(st.session_state.rpg_messages):
             with st.chat_message(msg["role"], avatar="👤" if msg["role"]=="user" else "🧙‍♂️"):
                 st.markdown(msg["content"])
-                # Dodajemy przycisk audio dla odpowiedzi Mistrza Gry (asystenta)
                 if msg["role"] == "assistant" and st.button(f"🔊 Odsłuchaj", key=f"tts_rpg_{i}"):
                     html = text_to_speech(msg["content"], tts_mode)
                     if html: 
                         st.markdown(html, unsafe_allow_html=True)
 
-        if rpg_prompt := st.chat_input("Wpisz swoją akcję lub wybierz opcję...", key="rpg_input_field"):
-            rpg_database.save_chat_message("user", rpg_prompt)
+        # --- DYNAMICZNY FILTR AKCJI (PRZYCISKI LUB SWOBODNY TEKST) ---
+        options = []
+        if st.session_state.rpg_messages and st.session_state.rpg_messages[-1]["role"] == "assistant":
+            last_reply = st.session_state.rpg_messages[-1]["content"]
+            # Szuka schematów typu: A) Tekst, B. Tekst, C - Tekst itp.
+            found_options = re.findall(r"([A-C|1-3])[\).\:\-\s]+([^\n]+)", last_reply)
+            if found_options:
+                options = [f"{opt[0].upper()}: {opt[1].strip()}" for opt in found_options]
+
+        # Inicjalizacja zmiennej przechowującej ostateczną decyzję gracza
+        final_action_prompt = None
+
+        st.markdown("<br>", unsafe_allow_html=True)
+        if options and len(options) >= 2:
+            st.write("### 🧭 Wybierz swoje działanie:")
+            cols = st.columns(len(options))
+            for idx, option_text in enumerate(options):
+                with cols[idx]:
+                    if st.button(option_text, use_container_width=True, type="primary" if idx == 0 else "secondary", key=f"rpg_btn_{idx}"):
+                        final_action_prompt = option_text
+        else:
+            # Koło ratunkowe: Jeśli brak opcji, renderujemy okno swobodnego pisania
+            if free_prompt := st.chat_input("Mistrz Gry nie dał gotowych opcji. Co robisz?", key="rpg_input_field"):
+                final_action_prompt = free_prompt
+
+        # Jeśli akcja została wybrana przez przycisk lub wpisana z palca, zapisujemy ją
+        if final_action_prompt:
+            rpg_database.save_chat_message("user", final_action_prompt)
             st.session_state.rpg_messages = rpg_database.get_chat_history()
             st.rerun()
 
+        # --- GENEROWANIE NOWEJ TURY PRZEZ MG ---
         if st.session_state.rpg_messages and st.session_state.rpg_messages[-1]["role"] == "user":
-            # Definiowanie schematów struktur narzędzi dla AI
             rpg_tools = [
                 {
                     "type": "function",
@@ -352,7 +378,6 @@ else:
                 }
             ]
 
-            # Dynamiczny prompt systemowy przekazujący aktualny stan inwentarza bezpośrednio do pamięci AI
             current_inv_list = [f"{i['name']} (x{i['qty']})" for i in rpg_database.get_inventory()]
             rpg_system_prompt = (
                 f"Jesteś profesjonalnym Mistrzem Gry RPG prowadzącym mroczną sesję cyberpunk.\n"
@@ -362,13 +387,18 @@ else:
                 f"1. Masz pełną władzę nad statystykami i przedmiotami gracza przy użyciu dostarczonych narzędzi.\n"
                 f"2. Kiedy gracz wykonuje akcję, która logicznie go rani, leczy, kosztuje pieniądze lub daje zarobek – WYWOŁAJ funkcję `modify_stats`.\n"
                 f"3. Kiedy gracz znajduje, kupuje przedmiot lub go zużywa/traci – WYWOŁAJ `add_inventory_item` lub `remove_inventory_item`.\n"
-                f"4. Jeśli gracz próbuje użyć przedmiotu, którego nie ma w wyżej wymienionym Ekwipunku, opisz w opowiadaniu niepowodzenie z powodu braku zasobów.\n"
-                f"Na końcu opowiadania zaproponuj 3 ponumerowane opcje zachowania (A, B, C)."
+                f"4. Jeśli gracz próbuje użyć przedmiotu, którego nie ma w wyżej wymienionym Ekwipunku, opisz w opowiadaniu niepowodzenie z powodu braku zasobów.\n\n"
+                f"CRITICAL FORMATTING RULE:\n"
+                f"Na samym końcu wypowiedzi ZAWSZE wygeneruj dokładnie 3 odrębne opcje wyboru dla gracza, każda w nowej linii, dokładnie w formacie:\n"
+                f"A) Krótki opis wyboru\n"
+                f"B) Krótki opis wyboru\n"
+                f"C) Krótki opis wyboru"
             )
             
             rpg_messages_to_send = [{"role": "system", "content": rpg_system_prompt}]
-            # Zamiast całej historii, bierzemy tylko system prompt i ostatnich 6 kroków
-            for m in st.session_state.rpg_messages[-6:]: rpg_messages_to_send.append({"role": m["role"], "content": m["content"]})
+            # Szybkie przesyłanie ostatnich 4 wiadomości, aby unikać blokad minutowych (TPM)
+            for m in st.session_state.rpg_messages[-4:]: 
+                rpg_messages_to_send.append({"role": m["role"], "content": m["content"]})
 
             with st.chat_message("assistant", avatar="🧙‍♂️"):
                 status = st.empty(); status.markdown('<div class="thinking-box"><div class="loader"></div><span>Mistrz Gry przetwarza akcję i oblicza modyfikatory...</span></div>', unsafe_allow_html=True)
