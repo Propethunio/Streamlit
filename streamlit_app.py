@@ -60,27 +60,8 @@ st.markdown("""
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
         text-align: center;
-        margin-top: -40px;
-    }
-    
-    /* STYLIZACJA ZAKŁADEK (TABS) */
-    .stTabs [data-baseweb="tab-list"] {
-        gap: 12px;
-        justify-content: center;
-    }
-    .stTabs [data-baseweb="tab"] {
-        background-color: rgba(255, 255, 255, 0.02) !important;
-        border: 1px solid rgba(0, 212, 255, 0.1) !important;
-        padding: 10px 24px !important;
-        border-radius: 8px 8px 0px 0px !important;
-        color: #b4c6ef !important;
-        font-weight: 600;
-    }
-    .stTabs [aria-selected="true"] {
-        background-color: rgba(0, 212, 255, 0.08) !important;
-        border-color: #00d4ff !important;
-        color: #00d4ff !important;
-        box-shadow: 0 0 10px rgba(0, 212, 255, 0.2);
+        margin-top: -20px;
+        margin-bottom: 20px;
     }
 
     /* KARTA STYLIZACJI POSTACI RPG */
@@ -94,7 +75,7 @@ st.markdown("""
         line-height: 1.5;
     }
     
-    /* STYLIZACJA PANELU BOCZNEGO */
+    /* STYLIZACJA PANELU BOCZNEGO I NAWIGACJI */
     [data-testid="stSidebar"] {
         background-color: #080911 !important;
         border-right: 1px solid rgba(0, 212, 255, 0.1) !important;
@@ -109,7 +90,21 @@ st.markdown("""
         color: #b4c6ef !important;
     }
             
-    /* STYLIZACJA PRZYCISKÓW SYSTEMOWYCH */
+    /* KUSTOMIZACJA PRZYCISKÓW MENU NAWIGACYJNEGO DLA PODKREŚLENIA AKTYWNOŚCI */
+    [data-testid="stSidebar"] .stRadio div[role="radiogroup"] label {
+        background: rgba(255, 255, 255, 0.03) !important;
+        border: 1px solid rgba(0, 212, 255, 0.1) !important;
+        padding: 10px 15px !important;
+        border-radius: 8px !important;
+        margin-bottom: 8px !important;
+        transition: all 0.3s ease;
+    }
+    [data-testid="stSidebar"] .stRadio div[role="radiogroup"] label:hover {
+        border-color: #00d4ff !important;
+        background: rgba(0, 212, 255, 0.05) !important;
+    }
+    
+    /* STYLIZACJA PRZYCISKÓW SYSTEMOWYCH SYSTEMU DANGER */
     button[kind="primary"], button[data-testid="baseButton-primary"] {
         background-color: #ff2a5f !important;
         border: 1px solid #ff003c !important;
@@ -203,7 +198,7 @@ def render_personality_selector():
         "Cyberpunk Hacker": "Mów jak haker z przyszłości, używaj technicznego slangu, bądź tajemniczy i neonowy.",
         "Ekspert Programowania": "Jesteś genialnym programistą. Odpowiadasz czystym kodem i technicznymi konkretami.",
         "Sarkastyczny Bot": "Jesteś inteligentny, ale bardzo sarkastyczny i nieco znudzony pomaganiem ludziom.",
-        "Naukowiec": "Jesteś profesor nauk ścisłych. Twoje odpowiedzi są bardzo szczegółowe i oparte na faktach."
+        "Naukowiec": "Jesteś profesorem nauk ścisłych. Twoje odpowiedzi są bardzo szczegółowe i oparte na faktach."
     }
     if persona == "Własna (Custom)":
         default_custom = st.session_state.get("custom_prompt_value", "Jesteś pomocnym asystentem AI. Twoje zadanie to...")
@@ -217,26 +212,23 @@ def render_personality_selector():
 file_content_to_send = ""
 image_payload = None
 
-# --- GŁÓWNY INTERFEJS - DEKLARACJA ZAKŁADEK (WYMAGANE DO LOGIKI SIDEBARA) ---
-st.markdown('<h1 class="big-title">NEON GEMINI ADVANCED</h1>', unsafe_allow_html=True)
-tab_chat, tab_rpg = st.tabs(["💬 MODUŁ ASYSTENTA & RAG CHAT", "🎮 MODUŁ MISTRZA GRY RPG"])
-
-# --- DETEKCJA AKTYWNEJ ZAKŁADKI PRZEZ SPYTANIE O STRONĘ (QUERY PARAMS LUB ZMIENNĄ STANU) ---
-# Używamy prostego mechanizmu przełączania kontekstu w tle
-if "active_tab" not in st.session_state:
-    st.session_state.active_tab = "Chat"
-
-# --- BUDOWA JEDNEGO, ZINTEGROWANEGO PANELU BOCZNEGO (SIDEBAR) ---
+# =====================================================================
+# AUTOMATYCZNY PANEL BOCZNY (SIDEBAR) Z FUNKCJĄ NAWIGACJI GLOBALNEJ
+# =====================================================================
 with st.sidebar:
-    st.markdown("<h2 style='color: #00d4ff; margin-bottom: 2px; font-weight:800; letter-spacing:2px;'>🌌 SYSTEM CONTROL</h2>", unsafe_allow_html=True)
+    st.markdown("<h2 style='color: #00d4ff; margin-bottom: 2px; font-weight:800; letter-spacing:2px;'>🌌 NEON INTERFACE</h2>", unsafe_allow_html=True)
     
-    # Ręczny selektor widoku bocznego korespondujący z zakładkami, by zachować 100% stabilności Streamlita
-    sidebar_mode = st.radio("Zmień podgląd opcji paska bocznego:", ["Opcje Asystenta / RAG", "Status Postaci RPG"], label_visibility="collapsed")
-    st.markdown('<hr class="custom-hr" style="margin-top:0px !important;">', unsafe_allow_html=True)
+    # SYSTEM ELEGANCKIEJ, AUTOMATYCZNEJ NAWIGACJI
+    app_mode = st.radio(
+        "WYBIERZ AKTYWNY MODUŁ SYSTEMU:",
+        ["💬 ASYSTENT & RAG CHAT", "🎮 MISTRZ GRY RPG"],
+        key="navigation_mode"
+    )
+    st.markdown('<hr class="custom-hr" style="margin-top:5px !important;">', unsafe_allow_html=True)
 
-    # DYNAMICZNA GÓRA: OPCJE CHATU / RAG
-    if sidebar_mode == "Opcje Asystenta / RAG":
-        st.markdown("<h4 style='color: #00d4ff; margin-top:-5px;'>🛠️ FUNKCJE CHATBOTA</h4>", unsafe_allow_html=True)
+    # REAKCJA: AUTOMATYCZNIE GENERUJESZ OPCJE CZATU, JEŚLI CZAT JEST WYBRANY
+    if app_mode == "💬 ASYSTENT & RAG CHAT":
+        st.markdown("<h4 style='color: #00d4ff; margin-top:-5px;'>🛠️ USTAWIENIA CZATU</h4>", unsafe_allow_html=True)
         render_personality_selector()
         
         with st.expander("📂 JEDNORAZOWY ZAŁĄCZNIK"):
@@ -272,7 +264,7 @@ with st.sidebar:
                     clear_rag_only()
                     st.rerun()
 
-    # DYNAMICZNA GÓRA: KARTA POSTACI RPG
+    # REAKCJA: AUTOMATYCZNIE POKAZUJESZ KARTĘ POSTACI, JEŚLI WYBRANO GRĘ RPG
     else:
         st.markdown("<h4 style='color: #8a2be2; margin-top:-5px;'>👤 STATUS POSTACI RPG</h4>", unsafe_allow_html=True)
         character = rpg_database.get_character()
@@ -300,7 +292,7 @@ with st.sidebar:
                 st.success("Gra wyczyszczona!")
                 st.rerun()
         else:
-            st.info("Brak aktywnego bohatera. Stwórz go w zakładce gry, aby zobaczyć statystyki.")
+            st.info("Brak bohatera. Stwórz go w oknie głównym, by odblokować statystyki.")
 
     # --- NA STAŁE NA SAMYM DOLE SIDEBARA: PARAMETRY SILNIKA ---
     st.markdown('<hr class="custom-hr">', unsafe_allow_html=True)
@@ -321,9 +313,12 @@ with st.sidebar:
     """, unsafe_allow_html=True)
 
 # =====================================================================
-# ZAKŁADKA 1: CZYSTY CHAT ASYSTENTA
+# GŁÓWNA STRONA APKI - DYNAMICZNE RENDEROWANIE TREŚCI (ZAMIAST TABS)
 # =====================================================================
-with tab_chat:
+st.markdown('<h1 class="big-title">NEON GEMINI ADVANCED</h1>', unsafe_allow_html=True)
+
+# RENDEROWANIE OKNA CZATU ASYSTENTA
+if app_mode == "💬 ASYSTENT & RAG CHAT":
     # Wyświetlanie historii czatu tradycyjnego
     for i, msg in enumerate(st.session_state.messages):
         with st.chat_message(msg["role"], avatar="👤" if msg["role"]=="user" else "🌌"):
@@ -375,10 +370,8 @@ with tab_chat:
             except Exception as e:
                 status.empty(); st.error(f"Błąd: {str(e)}")
 
-# =====================================================================
-# ZAKŁADKA 2: SEKCJA ROZGRYWKI RPG (CZYSTE OKNO FABUŁY)
-# =====================================================================
-with tab_rpg:
+# RENDEROWANIE OKNA ROZGRYWKI RPG
+else:
     character = rpg_database.get_character()
     
     if not character:
@@ -455,4 +448,4 @@ with tab_rpg:
                 except Exception as e:
                     status.empty(); st.error(f"Błąd sesji RPG: {str(e)}")
 
-st.markdown("""<div style="text-align: center; opacity: 0.2; font-size: 10px; margin-top: 50px;">NEON ENGINE V3.6 | SINGLE SIDEBAR NAVIGATION ACTIVE</div>""", unsafe_allow_html=True)
+st.markdown("""<div style="text-align: center; opacity: 0.2; font-size: 10px; margin-top: 50px;">NEON ENGINE V3.7 | INSTANT STATE SYNCHRONIZATION ACTIVE</div>""", unsafe_allow_html=True)
