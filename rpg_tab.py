@@ -3,7 +3,7 @@ import streamlit as st
 import streamlit.components.v1 as components
 import rpg_database
 import docloader
-from rpg_engine import build_rpg_system_prompt, call_rpg_ai, RPG_INITIAL_SCENE
+from rpg_engine import build_rpg_system_prompt, call_rpg_ai, generate_opening_scene
 from game_lore import GAME_CODEX, DEFAULT_LORE_NAME, load_default_lore_pdf_bytes
 from styles import THINKING_BOX_HTML, SCROLL_TO_BOTTOM_JS
 
@@ -196,22 +196,43 @@ def _process_active_action(client, model, temp):
     st.rerun()
 
 
-def _render_character_creation():
-    st.info("Brak aktywnego bohatera. Stwórz postać, aby rozpocząć permanentną kampanię.")
+def _render_character_creation(client, model, temp):
+    lore_text = st.session_state.get("rpg_lore_text", GAME_CODEX)
+    st.info("Brak aktywnego bohatera. Stwórz postać, aby rozpocząć kampanię w aktywnym świecie.")
     col1, col2 = st.columns(2)
     with col1:
-        hero_name = st.text_input("Imię bohatera:", value="Kaelen")
+        hero_name = st.text_input("Imię bohatera:", placeholder="np. Marek, Kaelen, Zara...")
     with col2:
-        hero_class = st.selectbox(
-            "Wybierz klasę postaci:",
-            ["Netrunner Cyber-Haker", "Zwiadowca Pustkowi", "Technomanta Neonu", "Uliczny Wojownik"],
+        hero_class = st.text_input(
+            "Klasa / rola postaci:",
+            placeholder="np. Legionista, Haker, Czarownica, Kupiec...",
         )
-    if st.button("🌌 ZAPISZ POSTAĆ W BAZIE I STWÓRZ ŚWIAT", use_container_width=True):
-        rpg_database.create_character(hero_name, hero_class)
-        initial_text = RPG_INITIAL_SCENE.format(name=hero_name, char_class=hero_class)
-        rpg_database.save_chat_message("assistant", initial_text)
+    st.caption(f"Aktywny świat: **{st.session_state.get('rpg_lore_name', DEFAULT_LORE_NAME)}** — klasa powinna pasować do jego realiów.")
+
+    if st.button("🌌 ZAPISZ POSTAĆ I ROZPOCZNIJ PRZYGODĘ", use_container_width=True):
+        if not hero_name.strip():
+            st.warning("Podaj imię bohatera.")
+            return
+        if not hero_class.strip():
+            st.warning("Podaj klasę / rolę postaci.")
+            return
+
+        rpg_database.create_character(hero_name.strip(), hero_class.strip())
+        character = rpg_database.get_character()
+
+        with st.spinner("Mistrz Gry kreuje świat i otwiera przygodę..."):
+            try:
+                opening = generate_opening_scene(client, model, temp, character, lore_text)
+            except Exception as e:
+                st.error(f"Błąd generowania sceny otwierającej: {e}")
+                return
+
+        if not opening:
+            st.error("Mistrz Gry zwrócił pustą scenę. Spróbuj ponownie.")
+            return
+
+        rpg_database.save_chat_message("assistant", opening)
         st.session_state.rpg_messages = rpg_database.get_chat_history()
-        st.success("Kampania zainicjalizowana pomyślnie!")
         st.rerun()
 
 
@@ -219,7 +240,7 @@ def render_rpg_tab(client, model, temp, text_to_speech_fn):
     character = rpg_database.get_character()
 
     if not character:
-        _render_character_creation()
+        _render_character_creation(client, model, temp)
         return
 
     # Faza 1: wyciąganie opcji z ostatniej wiadomości MG
@@ -260,7 +281,7 @@ def render_rpg_tab(client, model, temp, text_to_speech_fn):
             '<p style="text-align:center; font-size:28px; font-weight:800; '
             'color:#ff2a5f; margin:8px 0 4px;">☠️ ZGINĄŁEŚ</p>'
             '<p style="text-align:center; font-size:15px; color:#b4c6ef; margin-bottom:18px;">'
-            'Twoja przygoda dobiegła końca w mroku Sektora 7. '
+            'Twoja przygoda dobiegła końca. '
             'Zresetuj opowieść, aby narodzić się na nowo.</p>',
             unsafe_allow_html=True,
         )

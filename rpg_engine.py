@@ -76,24 +76,20 @@ RPG_TOOLS = [
     }
 ]
 
-RPG_INITIAL_SCENE = (
-    "Witaj, {name} ({char_class}). "
-    "Budzisz się w mrocznym, skąpanym w kwaśnym deszczu zaułku sektora 7. "
-    "W dłoni ściskasz uszkodzony cyber-dek. "
-    "Słyszysz zbliżające się kroki strażników korporacji Arasaka.\n\n"
-    "A) Spróbuj zhakować pobliską skrzynkę bezpieczników, by zgasić neony i ukryć się w cieniu.\n"
-    "B) Przygotuj się do walki wręcz i poczekaj w zasadzce.\n"
-    "C) Wybiegnij na główną aleję, próbując zgubić pościg w tłumie."
-)
-
-
 def build_rpg_system_prompt(character, inventory_list, lore_text):
     inv_str = ", ".join(inventory_list) if inventory_list else "Brak przedmiotów"
     hp = character["hp"]
     max_hp = character["max_hp"]
     return (
         f"Jesteś profesjonalnym Mistrzem Gry RPG prowadzącym sesję w świecie opisanym poniżej.\n\n"
-        f"KANON ŚWIATA GRY (obowiązujące realia, klasy i zasady — trzymaj się ich):\n{lore_text}\n\n"
+        f"⚠️ BEZWZGLĘDNA ZASADA — REALIA ŚWIATA:\n"
+        f"Kodeks poniżej DEFINIUJE jedyne dopuszczalne realia tej gry. "
+        f"Technologia, kultura, uzbrojenie, frakcje, klasy postaci i zagrożenia MUSZĄ być w 100% spójne z tym opisem. "
+        f"NIE wolno Ci wprowadzać żadnych elementów z innych epok ani gatunków — nawet dla urozmaicenia. "
+        f"Przykłady: jeśli kodeks opisuje starożytny Rzym → nie ma broni palnej, internetu, cybertechnologii; "
+        f"jeśli opisuje fantasy → nie ma pistoletów ani samochodów; jeśli opisuje sci-fi → nie ma łuków ani mieczy. "
+        f"Trzymaj się WYŁĄCZNIE realiów zdefiniowanych w kodeksie.\n\n"
+        f"KANON ŚWIATA GRY:\n{lore_text}\n\n"
         f"AKTUALNY STAN BOHATERA (MUSISZ go uwzględniać w KAŻDEJ odpowiedzi):\n"
         f"- Imię: {character['name']}\n"
         f"- Klasa: {character['class']}\n"
@@ -199,3 +195,20 @@ def call_rpg_ai(client, model, temp, messages):
 
     parts = [p for p in [first_content, second_content] if p]
     return "\n\n".join(parts)
+
+
+def generate_opening_scene(client, model, temp, character, lore_text):
+    """Generuje klimatyczną scenę otwierającą kampanię, dostosowaną do aktywnego kodeksu świata."""
+    system_prompt = build_rpg_system_prompt(character, [], lore_text)
+    intro_request = (
+        f"Zacznij nową kampanię dla postaci o imieniu {character['name']} ({character['class']}). "
+        f"Napisz wciągające, klimatyczne wprowadzenie do świata opisanego w kodeksie — minimum 4-5 zdań "
+        f"narracji opisujących otoczenie, atmosferę i sytuację startową bohatera. "
+        f"Narracja MUSI być w 100% spójna z realiami kodeksu — żadnych anachronizmów. "
+        f"Na końcu podaj 3 opcje pierwszych działań pasujące do tego świata i klasy postaci."
+    )
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": intro_request},
+    ]
+    return call_rpg_ai(client, model, temp, messages)

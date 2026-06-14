@@ -70,11 +70,9 @@ def create_character(name, char_class):
     
     cursor.execute("""
         INSERT INTO character_stats (name, character_class, hp, max_hp, gold, current_location, story_summary)
-        VALUES (?, ?, 100, 100, 50, 'Sektor 7 - Zaułek', 'Budzisz się w deszczu...')
+        VALUES (?, ?, 100, 100, 50, 'Nieznana lokacja', 'Przygoda się rozpoczyna.')
     """, (name, char_class))
-    
-    cursor.execute("INSERT INTO inventory (item_name, item_type, quantity) VALUES ('Uszkodzony Cyber-dek', 'narzędzie', 1)")
-    
+
     conn.commit()
     conn.close()
 
