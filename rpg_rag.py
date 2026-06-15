@@ -17,8 +17,8 @@ import rpg_database
 
 _RPG_EMBED_MODEL_ID = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
 
-RECENT_K = 4    # ostatnie N wiadomości zawsze dołączone
-RELEVANT_K = 4  # top N wiadomości z dalszej historii (wg podobieństwa)
+RECENT_K = 8    # ostatnie N wiadomości zawsze dołączone
+RELEVANT_K = 8  # top N wiadomości z dalszej historii (wg podobieństwa)
 
 
 @st.cache_resource
