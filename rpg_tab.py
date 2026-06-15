@@ -83,10 +83,12 @@ def render_sidebar_rpg():
     """, unsafe_allow_html=True)
 
     items = rpg_database.get_inventory()
-    if items:
-        with st.expander("🎒 EKWIPUNEK BOHATERA", expanded=True):
+    with st.expander("🎒 EKWIPUNEK BOHATERA", expanded=True):
+        if items:
             for it in items:
                 st.caption(f"• {it['name']} ({it['type']}) x{it['qty']}")
+        else:
+            st.caption(f"Brak przedmiotów")
 
     _render_codex_controls()
 
