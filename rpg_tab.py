@@ -72,7 +72,7 @@ def render_sidebar_rpg():
         _render_codex_controls()
         return
 
-    currency_label = character.get("currency_name", "kredytów").capitalize()
+    currency_label = character.get("currency_name", "kredytów").upper()
     st.markdown(f"""
         <div class="rpg-card">
             <b style="color: #ff00c8;">👤 BOHATER:</b> {character['name']}<br>

@@ -29,15 +29,17 @@ RPG_TOOLS = [
                     "summary": {
                         "type": "string",
                         "description": (
-                            "Jednozdaniowe podsumowanie fabularnego przełomu tej tury — zapisywane jako kanon historii. "
-                            "Wypełniaj ZAWSZE gdy: gracz wchodzi do nowej lokacji, toczy walkę, ginie NPC, "
-                            "odkrywa sekret, zawiera sojusz lub zdradę, zdobywa ważny przedmiot, podejmuje kluczową decyzję. "
-                            "Pisz zwięźle i konkretnie: 'Gracz pokonał strażnika i wkroczył do magazynu.' "
-                            "Pomiń tylko gdy tura to czyste przemieszczanie bez znaczących zdarzeń."
+                            "Jednozdaniowe podsumowanie fabularnego przełomu TEJ tury — zapisywane jako trwały kanon historii. "
+                            "Wymagane przy każdym wywołaniu modify_stats. "
+                            "Pisz zwięźle o tym co SIĘ WŁAŚNIE WYDARZYŁO: "
+                            "'Gracz pokonał strażnika i wkroczył do magazynu.', "
+                            "'Podpisano pakt z handlarzem Marcusem.', "
+                            "'Gracz odkrył ukryte przejście pod forum.' "
+                            "Czas teraźniejszy lub przeszły, jedna konkretna myśl."
                         )
                     }
                 },
-                "required": []
+                "required": ["summary"]
             }
         }
     },
@@ -193,12 +195,16 @@ def build_rpg_system_prompt(character, inventory_list, lore_text):
         f"8.2. OPCJE: Dopiero po narracji dopisz na końcu sekcję z wyborami.\n\n"
 
         f"9. ZASADY MODYFIKACJI ŚWIATA (NARZĘDZIA):\n"
+        f"9.0. ⚠️ STAN GRY JEST AKTUALNY — sekcja 'AKTUALNY STAN BOHATERA' powyżej odzwierciedla WSZYSTKIE zmiany "
+        f"ze wszystkich poprzednich tur. Każda zmiana HP, {character.get('currency_name', 'kredytów')}, lokacji i ekwipunku "
+        f"z wcześniejszych akcji jest już trwale zapisana. "
+        f"NIE wywołuj narzędzi aby odtworzyć lub potwierdzić zdarzenia opisane w historii rozmowy. "
+        f"Wywołuj narzędzia WYŁĄCZNIE dla zmian będących BEZPOŚREDNIĄ konsekwencją BIEŻĄCEJ akcji gracza.\n"
         f"9.1. Masz pełną władzę nad statystykami i przedmiotami gracza przy użyciu dostarczonych narzędzi.\n"
         f"9.2. Wywołaj `modify_stats` OBOWIĄZKOWO gdy: gracz traci lub zyskuje HP, traci lub zarabia {character.get('currency_name', 'kredytów')}, "
-        f"zmienia lokację (new_location), lub wydarzy się coś fabularnie istotnego (wtedy wypełnij pole summary). "
-        f"Pole summary wypełniaj w ważnych momentach — walka, śmierć NPC, odkrycie, zdrada, sojusz, kluczowa decyzja.\n"
-        f"9.3. Kiedy gracz znajduje, kupuje przedmiot lub go zużywa/traci – OBOWIĄZKOWO WYWOŁAJ `add_inventory_item` lub `remove_inventory_item`.\n"
-        f"9.4. Jeśli gracz próbuje użyć przedmiotu, którego nie ma w wyżej wymienionym Ekwipunku, opisz w opowiadaniu niepowodzenie z powodu braku zasobów.\n\n"
+        f"zmienia lokację (new_location), lub wydarzy się coś fabularnie istotnego — zawsze z wypełnionym polem summary.\n"
+        f"9.3. Kiedy gracz znajduje lub kupuje przedmiot – WYWOŁAJ `add_inventory_item`. Gdy go zużywa lub traci – `remove_inventory_item`.\n"
+        f"9.4. Jeśli gracz próbuje użyć przedmiotu, którego nie ma w Ekwipunku, opisz niepowodzenie z powodu braku zasobów.\n\n"
 
         f"10. ⛔ ABSOLUTNY ZAKAZ — BLOK STATUSU POSTACI:\n"
         f"Nigdy nie dodawaj do odpowiedzi bloku z aktualnym stanem bohatera "
@@ -294,11 +300,13 @@ def strip_changes_tail_from_history(text):
 def _build_changes_summary(changes, currency_name="kredytów"):
     """Buduje czytelne podsumowanie zmian statystyk/ekwipunku/lokacji z listy tool callów."""
     lines = []
+    last_summary = ""
     for func_name, func_args in changes:
         if func_name == "modify_stats":
             hp = func_args.get("hp_change", 0)
             gold = func_args.get("gold_change", 0)
             loc = func_args.get("new_location")
+            s = func_args.get("summary", "")
             if hp < 0:
                 lines.append(f"❤️ Stracono **{abs(hp)} HP**")
             elif hp > 0:
@@ -309,6 +317,8 @@ def _build_changes_summary(changes, currency_name="kredytów"):
                 lines.append(f"💰 Zdobyto **{gold} {currency_name}**")
             if loc:
                 lines.append(f"📍 Lokacja: **{loc}**")
+            if s:
+                last_summary = s
         elif func_name == "add_inventory_item":
             name = func_args.get("item_name", "?")
             qty = func_args.get("quantity", 1)
@@ -319,6 +329,8 @@ def _build_changes_summary(changes, currency_name="kredytów"):
             qty = func_args.get("quantity", 1)
             suffix = f" ×{qty}" if qty > 1 else ""
             lines.append(f"🎒 Utracono: **{name}**{suffix}")
+    if last_summary:
+        lines.append(f"📝 *{last_summary}*")
     if not lines:
         return ""
     body = "\n".join(f"— {l}" for l in lines)
