@@ -47,7 +47,13 @@ def init_db():
             embedding BLOB NOT NULL
         )
     """)
-    
+
+    # Migracja: dodaj currency_name jeśli kolumna jeszcze nie istnieje
+    try:
+        cursor.execute("ALTER TABLE character_stats ADD COLUMN currency_name TEXT DEFAULT 'kredytów'")
+    except Exception:
+        pass  # kolumna już istnieje
+
     conn.commit()
     conn.close()
 
@@ -65,7 +71,8 @@ def get_character():
         return {
             "id": row[0], "name": row[1], "class": row[2],
             "hp": row[3], "max_hp": row[4], "gold": row[5],
-            "location": row[6], "summary": row[7]
+            "location": row[6], "summary": row[7],
+            "currency_name": row[8] if len(row) > 8 else "kredytów",
         }
     return None
 
@@ -77,8 +84,8 @@ def create_character(name, char_class):
     cursor.execute("DELETE FROM rpg_chat_history")
     
     cursor.execute("""
-        INSERT INTO character_stats (name, character_class, hp, max_hp, gold, current_location, story_summary)
-        VALUES (?, ?, 100, 100, 50, 'Nieznana lokacja', 'Przygoda się rozpoczyna.')
+        INSERT INTO character_stats (name, character_class, hp, max_hp, gold, current_location, story_summary, currency_name)
+        VALUES (?, ?, 100, 100, 50, 'Nieznana lokacja', 'Przygoda się rozpoczyna.', 'kredytów')
     """, (name, char_class))
 
     conn.commit()
@@ -155,21 +162,22 @@ def remove_inventory_item(item_name, quantity=1):
     conn.close()
     return result
 
-def set_starting_stats(max_hp, current_hp, gold):
-    """Ustawia absolutne wartości startowe HP i złota na początku kampanii."""
+def set_starting_stats(max_hp, current_hp, gold, currency_name=None):
+    """Ustawia absolutne wartości startowe HP, złota i nazwy waluty na początku kampanii."""
     char = get_character()
     if not char:
         return "Błąd: Postać nie istnieje."
     current_hp = max(1, min(max_hp, current_hp))
+    currency = currency_name if currency_name else char.get("currency_name", "kredytów")
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
     cursor.execute(
-        "UPDATE character_stats SET hp = ?, max_hp = ?, gold = ? WHERE id = ?",
-        (current_hp, max_hp, gold, char["id"]),
+        "UPDATE character_stats SET hp = ?, max_hp = ?, gold = ?, currency_name = ? WHERE id = ?",
+        (current_hp, max_hp, gold, currency, char["id"]),
     )
     conn.commit()
     conn.close()
-    return f"Ustawiono statystyki startowe: HP {current_hp}/{max_hp}, Kredyty: {gold}"
+    return f"Ustawiono statystyki startowe: HP {current_hp}/{max_hp}, {currency}: {gold}"
 
 
 def save_chat_message(role, content):

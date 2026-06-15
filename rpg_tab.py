@@ -72,12 +72,13 @@ def render_sidebar_rpg():
         _render_codex_controls()
         return
 
+    currency_label = character.get("currency_name", "kredytów").capitalize()
     st.markdown(f"""
         <div class="rpg-card">
             <b style="color: #ff00c8;">👤 BOHATER:</b> {character['name']}<br>
             <b style="color: #8a2be2;">🎭 KLASA:</b> {character['class']}<br>
             <b style="color: #00d4ff;">❤️ ŻYCIE:</b> {character['hp']}/{character['max_hp']}<br>
-            <b style="color: #ffd700;">💰 KREDYTY:</b> {character['gold']}<br>
+            <b style="color: #ffd700;">💰 {currency_label}:</b> {character['gold']}<br>
             <b style="color: #00ffcc;">📍 LOKACJA:</b> {character['location']}
         </div>
     """, unsafe_allow_html=True)
@@ -187,7 +188,8 @@ def _process_active_action(client, model, temp):
             unsafe_allow_html=True,
         )
         try:
-            full_response = call_rpg_ai(client, model, temp, send_messages)
+            full_response = call_rpg_ai(client, model, temp, send_messages,
+                                        currency_name=character.get("currency_name", "kredytów"))
             status.empty()
             if not full_response:
                 st.error("Mistrz Gry zwrócił pustą odpowiedź. Spróbuj ponownie.")

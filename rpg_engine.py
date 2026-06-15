@@ -28,7 +28,13 @@ RPG_TOOLS = [
                     },
                     "summary": {
                         "type": "string",
-                        "description": "Krótkie jednozdaniowe podsumowanie obecnej sytuacji fabularnej."
+                        "description": (
+                            "Jednozdaniowe podsumowanie fabularnego przełomu tej tury — zapisywane jako kanon historii. "
+                            "Wypełniaj ZAWSZE gdy: gracz wchodzi do nowej lokacji, toczy walkę, ginie NPC, "
+                            "odkrywa sekret, zawiera sojusz lub zdradę, zdobywa ważny przedmiot, podejmuje kluczową decyzję. "
+                            "Pisz zwięźle i konkretnie: 'Gracz pokonał strażnika i wkroczył do magazynu.' "
+                            "Pomiń tylko gdy tura to czyste przemieszczanie bez znaczących zdarzeń."
+                        )
                     }
                 },
                 "required": []
@@ -82,8 +88,9 @@ STARTING_STATS_TOOL = {
     "function": {
         "name": "set_starting_stats",
         "description": (
-            "Ustawia absolutne statystyki startowe postaci na początku kampanii (max HP, aktualne HP i kredyty/złoto). "
-            "Wywołaj DOKŁADNIE RAZ, przed napisaniem narracji otwierającej, aby dostosować wartości do klasy i realiów świata."
+            "Ustawia absolutne statystyki startowe postaci na początku kampanii. "
+            "Wywołaj DOKŁADNIE RAZ, przed napisaniem narracji otwierającej. "
+            "Dobierz wartości i nazwę waluty do klasy postaci i realiów świata z kodeksu."
         ),
         "parameters": {
             "type": "object",
@@ -94,14 +101,23 @@ STARTING_STATS_TOOL = {
                 },
                 "current_hp": {
                     "type": "integer",
-                    "description": "Aktualne HP na start (najczęściej równe max_hp, chyba że postać już jest ranna)."
+                    "description": "Aktualne HP na start (najczęściej równe max_hp, chyba że postać jest już ranna)."
                 },
                 "gold": {
                     "type": "integer",
-                    "description": "Startowe kredyty/złoto, np. 5 dla gladiatora, 30 dla szlachcica."
+                    "description": "Startowa ilość waluty, np. 5 dla gladiatora, 80 dla szlachcica."
+                },
+                "currency_name": {
+                    "type": "string",
+                    "description": (
+                        "Nazwa waluty dopasowana do realiów kodeksu świata. "
+                        "Przykłady: 'kredytów' (cyberpunk), 'sztuk złota' (fantasy), 'kapsli' (postapo), "
+                        "'denarów' (starożytny Rzym), 'monet' (ogólne), 'soli' (pustynny świat), 'rudy' (steampunk). "
+                        "Użyj formy dopełniacza liczby mnogiej (bo: 'zdobyto 10 kredytów')."
+                    )
                 }
             },
-            "required": ["max_hp", "current_hp", "gold"]
+            "required": ["max_hp", "current_hp", "gold", "currency_name"]
         }
     }
 }
@@ -127,7 +143,7 @@ def build_rpg_system_prompt(character, inventory_list, lore_text):
         f"- Imię: {character['name']}\n"
         f"- Klasa: {character['class']}\n"
         f"- Życie (HP): {hp}/{max_hp}\n"
-        f"- Kredyty: {character['gold']}\n"
+        f"- {character.get('currency_name', 'kredytów').capitalize()}: {character['gold']}\n"
         f"- Lokacja: {character['location']}\n"
         f"- Streszczenie dotychczasowej fabuły: {character['summary']}\n"
         f"- Ekwipunek: {inv_str}\n\n"
@@ -178,7 +194,9 @@ def build_rpg_system_prompt(character, inventory_list, lore_text):
 
         f"9. ZASADY MODYFIKACJI ŚWIATA (NARZĘDZIA):\n"
         f"9.1. Masz pełną władzę nad statystykami i przedmiotami gracza przy użyciu dostarczonych narzędzi.\n"
-        f"9.2. Kiedy gracz wykonuje akcję, która logicznie go rani, leczy, kosztuje pieniądze lub daje zarobek – OBOWIĄZKOWO WYWOŁAJ funkcję `modify_stats`.\n"
+        f"9.2. Wywołaj `modify_stats` OBOWIĄZKOWO gdy: gracz traci lub zyskuje HP, traci lub zarabia {character.get('currency_name', 'kredytów')}, "
+        f"zmienia lokację (new_location), lub wydarzy się coś fabularnie istotnego (wtedy wypełnij pole summary). "
+        f"Pole summary wypełniaj w ważnych momentach — walka, śmierć NPC, odkrycie, zdrada, sojusz, kluczowa decyzja.\n"
         f"9.3. Kiedy gracz znajduje, kupuje przedmiot lub go zużywa/traci – OBOWIĄZKOWO WYWOŁAJ `add_inventory_item` lub `remove_inventory_item`.\n"
         f"9.4. Jeśli gracz próbuje użyć przedmiotu, którego nie ma w wyżej wymienionym Ekwipunku, opisz w opowiadaniu niepowodzenie z powodu braku zasobów.\n\n"
 
@@ -216,6 +234,7 @@ def _dispatch_tool_call(func_name, func_args):
             max_hp=func_args.get("max_hp", 100),
             current_hp=func_args.get("current_hp", 100),
             gold=func_args.get("gold", 50),
+            currency_name=func_args.get("currency_name"),
         )
     if func_name == "modify_stats":
         return rpg_database.modify_stats(
@@ -272,7 +291,7 @@ def strip_changes_tail_from_history(text):
     return text
 
 
-def _build_changes_summary(changes):
+def _build_changes_summary(changes, currency_name="kredytów"):
     """Buduje czytelne podsumowanie zmian statystyk/ekwipunku/lokacji z listy tool callów."""
     lines = []
     for func_name, func_args in changes:
@@ -285,9 +304,9 @@ def _build_changes_summary(changes):
             elif hp > 0:
                 lines.append(f"❤️ Odzyskano **{hp} HP**")
             if gold < 0:
-                lines.append(f"💰 Stracono **{abs(gold)} kredytów**")
+                lines.append(f"💰 Stracono **{abs(gold)} {currency_name}**")
             elif gold > 0:
-                lines.append(f"💰 Zdobyto **{gold} kredytów**")
+                lines.append(f"💰 Zdobyto **{gold} {currency_name}**")
             if loc:
                 lines.append(f"📍 Lokacja: **{loc}**")
         elif func_name == "add_inventory_item":
@@ -306,9 +325,9 @@ def _build_changes_summary(changes):
     return f"\n\n---\n*📊 Zmiany w tej turze:*\n{body}"
 
 
-def call_rpg_ai(client, model, temp, messages, extra_tools=None):
+def call_rpg_ai(client, model, temp, messages, extra_tools=None, tools_override=None, currency_name="kredytów"):
     """Wywołuje AI z function calling i zwraca końcową odpowiedź tekstową."""
-    tools = RPG_TOOLS + (extra_tools or [])
+    tools = tools_override if tools_override is not None else RPG_TOOLS + (extra_tools or [])
     response = client.chat.completions.create(
         model=model,
         messages=messages,
@@ -348,7 +367,7 @@ def call_rpg_ai(client, model, temp, messages, extra_tools=None):
 
     parts = [p for p in [first_content, second_content] if p]
     combined = _strip_status_block(_strip_ai_fake_summary("\n\n".join(parts)))
-    return combined + _build_changes_summary(changes)
+    return combined + _build_changes_summary(changes, currency_name)
 
 
 def generate_opening_scene(client, model, temp, character, lore_text):
@@ -357,9 +376,13 @@ def generate_opening_scene(client, model, temp, character, lore_text):
     intro_request = (
         f"Zacznij nową kampanię dla postaci o imieniu {character['name']} ({character['class']}).\n\n"
 
-        f"KROK 1 — OBOWIĄZKOWO wywołaj narzędzie set_starting_stats, aby ustawić startowe HP i kredyty. "
-        f"Dobierz wartości do klasy '{character['class']}', statusu społecznego, profesji, zagrożeń świata i tonu kampanii. "
-        f"Nie traktuj poniższych kategorii jako sztywnych klas — to tylko archetypy pomocnicze:\n\n"
+        f"KROK 1 — OBOWIĄZKOWO wywołaj narzędzie set_starting_stats. Ustaw:\n"
+        f"• max_hp i current_hp dopasowane do klasy '{character['class']}' i realiów świata\n"
+        f"• gold — startową ilość waluty\n"
+        f"• currency_name — NAZWĘ WALUTY tego świata w dopełniaczu l.mn. "
+        f"(np. 'sztuk złota', 'denarów', 'kapsli', 'kredytów', 'monet', 'soli'). "
+        f"Dobierz do epoki i klimatu kodeksu — to będzie używane przez cały czas trwania gry.\n\n"
+        f"Archetypy HP (tylko wskazówki, nie sztywne wartości):\n\n"
         
         f"- Frontowiec / wojownik / gladiator / żołnierz / ochroniarz → max_hp: 110-140, gold: 5-18\n"
         f"- Najemnik / łowca nagród / egzekutor / zawodowy zabijaka → max_hp: 95-125, gold: 10-28\n"
@@ -386,4 +409,5 @@ def generate_opening_scene(client, model, temp, character, lore_text):
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": intro_request},
     ]
-    return call_rpg_ai(client, model, temp, messages, extra_tools=[STARTING_STATS_TOOL])
+    # tools_override: tylko set_starting_stats — bez modify_stats, żeby nie generować zbędnych zmian lokacji/summary
+    return call_rpg_ai(client, model, temp, messages, tools_override=[STARTING_STATS_TOOL])
