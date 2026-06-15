@@ -1,5 +1,6 @@
 import re
 import streamlit as st
+import streamlit.components.v1 as components
 import rpg_database
 import docloader
 from rpg_engine import build_rpg_system_prompt, call_rpg_ai, generate_opening_scene, strip_changes_tail_from_history
@@ -210,18 +211,18 @@ def _process_active_action(client, model, temp):
 
 def _render_character_creation(client, model, temp):
     lore_text = st.session_state.get("rpg_lore_text", GAME_CODEX)
-    st.info("Brak aktywnego bohatera. Stwórz postać, aby rozpocząć kampanię w aktywnym świecie.")
+    st.info("Brak aktywnego bohatera. Stwórz postać, aby rozpocząć przygodę w aktywnym świecie.")
     col1, col2 = st.columns(2)
     with col1:
-        hero_name = st.text_input("Imię bohatera:", placeholder="np. Marek, Kaelen, Zara...")
+        hero_name = st.text_input("Imię bohatera:", placeholder="Snoop Smogg")
     with col2:
         hero_class = st.text_input(
             "Klasa / rola postaci:",
-            placeholder="np. Legionista, Haker, Czarownica, Kupiec...",
+            placeholder="Beatdealer Dymnej Dzielnicy",
         )
     st.caption(f"Aktywny świat: **{st.session_state.get('rpg_lore_name', DEFAULT_LORE_NAME)}** — klasa powinna pasować do jego realiów.")
 
-    if st.button("🌌 ZAPISZ POSTAĆ I ROZPOCZNIJ PRZYGODĘ", use_container_width=True):
+    if st.button("✨ STWÓRZ POSTAĆ I RUSZ W DROGĘ", use_container_width=True):
         if not hero_name.strip():
             st.warning("Podaj imię bohatera.")
             return
@@ -300,7 +301,7 @@ def render_rpg_tab(client, model, temp, text_to_speech_fn):
             'Zresetuj opowieść, aby narodzić się na nowo.</p>',
             unsafe_allow_html=True,
         )
-        if st.button("💀 ZRESETUJ OPOWIEŚĆ I ZACZNIJ OD NOWA", use_container_width=True, type="primary"):
+        if st.button("🪶 ROZPOCZNIJ NOWĄ OPOWIEŚĆ", use_container_width=True, type="primary"):
             rpg_database.clear_all_rpg_data()
             st.session_state.rpg_messages = []
             st.session_state.last_rpg_image = None
@@ -310,7 +311,7 @@ def render_rpg_tab(client, model, temp, text_to_speech_fn):
         # Przyciski opcji A/B/C jako skróty (gdy dostępne)
         if len(options) >= 2:
             st.markdown(
-                '<p style="text-align:center; font-size:20px; font-weight:700; '
+                '<p style="text-align:center; font-size:22px; font-weight:700; '
                 'color:#b4c6ef; margin:8px 0 14px;">🧭 Wybierz swoje działanie:</p>',
                 unsafe_allow_html=True,
             )
@@ -321,9 +322,21 @@ def render_rpg_tab(client, model, temp, text_to_speech_fn):
                         st.session_state.active_rpg_action = option_text
                         st.rerun()
 
-        # st.chat_input jest zawsze widoczny — triggery natywny scroll Streamlita
-        # oraz umożliwia wpisanie własnej akcji w dowolnym momencie
+        # st.chat_input jest zawsze widoczny — umożliwia wpisanie własnej akcji
         placeholder = "Wpisz własną akcję..." if options else "Mistrz Gry czeka. Co robisz?"
         if free_prompt := st.chat_input(placeholder, key="rpg_input_field"):
             st.session_state.active_rpg_action = free_prompt
             st.rerun()
+
+    # Scroll do dołu — argument zmieniający się z każdym re-renderem wymusza
+    # re-ewaluację skryptu przez Streamlit (bez tego JS jest cachowany i nie odpala).
+    _scroll_key = sum(len(m["content"]) for m in messages)
+    components.html(
+        f"""<script>
+        (function(k) {{
+            var main = parent.document.querySelector('section.main');
+            if (main) main.scrollTop = main.scrollHeight;
+        }})({_scroll_key});
+        </script>""",
+        height=0,
+    )
