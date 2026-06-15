@@ -39,6 +39,14 @@ def init_db():
             timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
         )
     """)
+
+    # 4. Embeddingi wiadomości do RAG historii
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS rpg_message_embeddings (
+            message_id INTEGER PRIMARY KEY,
+            embedding BLOB NOT NULL
+        )
+    """)
     
     conn.commit()
     conn.close()
@@ -168,8 +176,37 @@ def save_chat_message(role, content):
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
     cursor.execute("INSERT INTO rpg_chat_history (role, content) VALUES (?, ?)", (role, content))
+    row_id = cursor.lastrowid
     conn.commit()
     conn.close()
+    return row_id
+
+def save_message_embedding(message_id, embedding_bytes):
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    cursor.execute(
+        "INSERT OR REPLACE INTO rpg_message_embeddings (message_id, embedding) VALUES (?, ?)",
+        (message_id, embedding_bytes),
+    )
+    conn.commit()
+    conn.close()
+
+def get_history_with_embeddings():
+    """Zwraca wszystkie wiadomości historii z ich embeddingami (lub None jeśli brak)."""
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    try:
+        cursor.execute("""
+            SELECT h.id, h.role, h.content, e.embedding
+            FROM rpg_chat_history h
+            LEFT JOIN rpg_message_embeddings e ON h.id = e.message_id
+            ORDER BY h.id ASC
+        """)
+        rows = cursor.fetchall()
+    except sqlite3.OperationalError:
+        rows = []
+    conn.close()
+    return [{"id": r[0], "role": r[1], "content": r[2], "embedding": r[3]} for r in rows]
 
 def get_chat_history():
     conn = sqlite3.connect(DB_NAME)
@@ -188,6 +225,7 @@ def clear_all_rpg_data():
     cursor.execute("DELETE FROM character_stats")
     cursor.execute("DELETE FROM inventory")
     cursor.execute("DELETE FROM rpg_chat_history")
+    cursor.execute("DELETE FROM rpg_message_embeddings")
     conn.commit()
     conn.close()
 

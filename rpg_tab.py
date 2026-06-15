@@ -3,6 +3,7 @@ import streamlit as st
 import rpg_database
 import docloader
 from rpg_engine import build_rpg_system_prompt, call_rpg_ai, generate_opening_scene, strip_changes_tail_from_history
+import rpg_rag
 from game_lore import GAME_CODEX, DEFAULT_LORE_NAME, load_default_lore_pdf_bytes
 from styles import THINKING_BOX_HTML
 
@@ -154,16 +155,23 @@ def _process_active_action(client, model, temp):
     4. Zapisuje odpowiedź do bazy i wyzwala rerun
     """
     action = st.session_state.pop("active_rpg_action")
-    rpg_database.save_chat_message("user", action)
+
+    # Zapisz akcję gracza i utwórz embedding
+    user_msg_id = rpg_database.save_chat_message("user", action)
+    try:
+        rpg_rag.embed_and_store(user_msg_id, action)
+    except Exception:
+        pass  # błąd embeddingu nie przerywa gry
 
     character = rpg_database.get_character()
     inv_list = [f"{i['name']} (x{i['qty']})" for i in rpg_database.get_inventory()]
     lore_text = st.session_state.get("rpg_lore_text", GAME_CODEX)
     system_prompt = build_rpg_system_prompt(character, inv_list, lore_text)
 
-    history = rpg_database.get_chat_history()
+    # RAG: ostatnie RECENT_K wiadomości + top RELEVANT_K z dalszej historii
+    rag_history = rpg_rag.build_relevant_history(action)
     send_messages = [{"role": "system", "content": system_prompt}]
-    for m in history[-8:]:
+    for m in rag_history:
         content = strip_changes_tail_from_history(m["content"]) if m["role"] == "assistant" else m["content"]
         send_messages.append({"role": m["role"], "content": content})
 
@@ -188,7 +196,13 @@ def _process_active_action(client, model, temp):
             st.error(f"Błąd AI Mistrza Gry: {e}")
             return
 
-    rpg_database.save_chat_message("assistant", full_response)
+    # Zapisz odpowiedź MG i utwórz embedding
+    resp_msg_id = rpg_database.save_chat_message("assistant", full_response)
+    try:
+        rpg_rag.embed_and_store(resp_msg_id, full_response)
+    except Exception:
+        pass
+
     st.session_state.total_tokens += (len(action) + len(full_response)) // 4
     st.session_state.rpg_messages = rpg_database.get_chat_history()
     st.rerun()
@@ -229,7 +243,11 @@ def _render_character_creation(client, model, temp):
             st.error("Mistrz Gry zwrócił pustą scenę. Spróbuj ponownie.")
             return
 
-        rpg_database.save_chat_message("assistant", opening)
+        opening_id = rpg_database.save_chat_message("assistant", opening)
+        try:
+            rpg_rag.embed_and_store(opening_id, opening)
+        except Exception:
+            pass
         st.session_state.rpg_messages = rpg_database.get_chat_history()
         st.rerun()
 
