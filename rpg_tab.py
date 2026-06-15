@@ -214,11 +214,11 @@ def _render_character_creation(client, model, temp):
     st.info("Brak aktywnego bohatera. Stwórz postać, aby rozpocząć przygodę w aktywnym świecie.")
     col1, col2 = st.columns(2)
     with col1:
-        hero_name = st.text_input("Imię bohatera:", placeholder="Snoop Smogg")
+        hero_name = st.text_input("Imię bohatera:", placeholder="np. Snoop Smogg")
     with col2:
         hero_class = st.text_input(
             "Klasa / rola postaci:",
-            placeholder="Beatdealer Dymnej Dzielnicy",
+            placeholder="np. Beatdealer Dymnej Dzielnicy",
         )
     st.caption(f"Aktywny świat: **{st.session_state.get('rpg_lore_name', DEFAULT_LORE_NAME)}** — klasa powinna pasować do jego realiów.")
 
