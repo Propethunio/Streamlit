@@ -112,6 +112,14 @@ STARTING_STATS_TOOL = {
                     "type": "integer",
                     "description": "Startowa ilość waluty, np. 5 dla gladiatora, 80 dla szlachcica."
                 },
+                "starting_location": {
+                    "type": "string",
+                    "description": (
+                        "Konkretna nazwa miejsca startowego bohatera — skąd zaczyna swoją przygodę. "
+                        "Dobierz do realiów kodeksu i klasy postaci, np. 'Forum Romanum', 'Podziemna arena gladiatorów', "
+                        "'Slumsy Sektora 7', 'Karczma Pod Złotym Lwem'. Nie używaj 'Nieznana lokacja'."
+                    )
+                },
                 "currency_name": {
                     "type": "string",
                     "description": (
@@ -122,7 +130,7 @@ STARTING_STATS_TOOL = {
                     )
                 }
             },
-            "required": ["max_hp", "current_hp", "gold", "currency_name"]
+            "required": ["max_hp", "current_hp", "gold", "currency_name", "starting_location"]
         }
     }
 }
@@ -249,6 +257,7 @@ def _dispatch_tool_call(func_name, func_args):
             current_hp=func_args.get("current_hp", 100),
             gold=func_args.get("gold", 50),
             currency_name=func_args.get("currency_name"),
+            starting_location=func_args.get("starting_location"),
         )
     if func_name == "modify_stats":
         return rpg_database.modify_stats(
@@ -339,8 +348,8 @@ def _build_changes_summary(changes, currency_name="kredytów"):
             lines.append(f"🎒 Utracono: **{name}**{suffix}")
     if not lines and not last_summary:
         return ""
-    body = "\n".join(f"— {l}" for l in lines)
-    result = f"\n\n---\n*📊 Zmiany w tej turze:*\n{body}" if lines else "\n\n---"
+    body = "  \n".join(f"— {l}" for l in lines)
+    result = f"\n\n---\n*📊 Zmiany w tej turze:*  \n{body}" if lines else "\n\n---"
     if last_summary:
         result += f"\n\n📝 *{last_summary}*"
     return result
@@ -400,11 +409,13 @@ def generate_opening_scene(client, model, temp, character, lore_text):
         f"Zacznij nową kampanię dla postaci o imieniu {character['name']} ({character['class']}).\n\n"
 
         f"KROK 1 — OBOWIĄZKOWO wywołaj narzędzie set_starting_stats. Ustaw:\n"
-        f"• max_hp i current_hp dopasowane do klasy '{character['class']}' i realiów świata\n"
+        f"• max_hp i current_hp — dopasowane do klasy '{character['class']}' i realiów świata\n"
         f"• gold — startową ilość waluty\n"
-        f"• currency_name — NAZWĘ WALUTY tego świata w dopełniaczu l.mn. "
-        f"(np. 'sztuk złota', 'denarów', 'kapsli', 'kredytów', 'monet', 'soli'). "
-        f"Dobierz do epoki i klimatu kodeksu — to będzie używane przez cały czas trwania gry.\n\n"
+        f"• currency_name — nazwę waluty w dopełniaczu l.mn. "
+        f"(np. 'sztuk złota', 'denarów', 'kapsli', 'kredytów', 'monet'). "
+        f"Dobierz do epoki i klimatu kodeksu.\n"
+        f"• starting_location — konkretna nazwa miejsca startowego, spójna z kodeksem i klasą postaci "
+        f"(np. 'Forum Romanum', 'Arena gladiatorów', 'Slumsy Sektora 7'). NIE używaj 'Nieznana lokacja'.\n\n"
         f"Archetypy HP (tylko wskazówki, nie sztywne wartości):\n\n"
         
         f"- Frontowiec / wojownik / gladiator / żołnierz / ochroniarz → max_hp: 110-140, gold: 5-18\n"

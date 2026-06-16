@@ -162,22 +162,23 @@ def remove_inventory_item(item_name, quantity=1):
     conn.close()
     return result
 
-def set_starting_stats(max_hp, current_hp, gold, currency_name=None):
-    """Ustawia absolutne wartości startowe HP, złota i nazwy waluty na początku kampanii."""
+def set_starting_stats(max_hp, current_hp, gold, currency_name=None, starting_location=None):
+    """Ustawia absolutne wartości startowe HP, złota, waluty i lokacji na początku kampanii."""
     char = get_character()
     if not char:
         return "Błąd: Postać nie istnieje."
     current_hp = max(1, min(max_hp, current_hp))
     currency = currency_name if currency_name else char.get("currency_name", "kredytów")
+    location = starting_location if starting_location else char.get("location", "Nieznana lokacja")
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
     cursor.execute(
-        "UPDATE character_stats SET hp = ?, max_hp = ?, gold = ?, currency_name = ? WHERE id = ?",
-        (current_hp, max_hp, gold, currency, char["id"]),
+        "UPDATE character_stats SET hp = ?, max_hp = ?, gold = ?, currency_name = ?, current_location = ? WHERE id = ?",
+        (current_hp, max_hp, gold, currency, location, char["id"]),
     )
     conn.commit()
     conn.close()
-    return f"Ustawiono statystyki startowe: HP {current_hp}/{max_hp}, {currency}: {gold}"
+    return f"Ustawiono statystyki startowe: HP {current_hp}/{max_hp}, {currency}: {gold}, Lokacja: {location}"
 
 
 def save_chat_message(role, content):
