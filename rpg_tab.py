@@ -137,13 +137,21 @@ def _extract_options(text):
     if len(option_map) < 2:
         return text, []
 
-    # Narracja = to co PRZED blokiem opcji + to co PO bloku opcji
     before = "\n".join(lines[:first_option_idx]).rstrip()
     after = "\n".join(lines[last_option_idx + 1:]).lstrip()
-    if before and after:
-        story = before + "\n\n" + after
+
+    if before.strip():
+        # Narracja sprzed opcji jest główną treścią.
+        # Z tekstu po opcjach dołączamy tylko blok zmian (---\n*📊...) — pomijamy
+        # redundantny paragraf, który Gemini czasem dodaje po opcjach A/B/C.
+        changes_idx = after.find("---\n*📊")
+        if changes_idx >= 0:
+            story = before + "\n\n" + after[changes_idx:]
+        else:
+            story = before
     else:
-        story = (before + after).strip()
+        # Opcje na początku odpowiedzi (edge case) — użyj tekstu po opcjach jako narracji
+        story = after.strip()
 
     options = [option_map[k] for k in sorted(option_map.keys())]
     return story, options
