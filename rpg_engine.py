@@ -24,7 +24,10 @@ RPG_TOOLS = [
                     },
                     "new_location": {
                         "type": "string",
-                        "description": "Nazwa nowej lokacji, jeśli bohater przemieścił się w inne miejsce."
+                        "description": (
+                            "Nazwa nowej lokacji — TYLKO gdy bohater faktycznie opuścił poprzednią lokację i znalazł się w innym miejscu. "
+                            "NIE podawaj tego pola jeśli gracz pozostaje w tej samej lokacji co na początku tury."
+                        )
                     },
                     "summary": {
                         "type": "string",
@@ -334,12 +337,13 @@ def _build_changes_summary(changes, currency_name="kredytów"):
             qty = func_args.get("quantity", 1)
             suffix = f" ×{qty}" if qty > 1 else ""
             lines.append(f"🎒 Utracono: **{name}**{suffix}")
-    if last_summary:
-        lines.append(f"📝 *{last_summary}*")
-    if not lines:
+    if not lines and not last_summary:
         return ""
     body = "\n".join(f"— {l}" for l in lines)
-    return f"\n\n---\n*📊 Zmiany w tej turze:*\n{body}"
+    result = f"\n\n---\n*📊 Zmiany w tej turze:*\n{body}" if lines else "\n\n---"
+    if last_summary:
+        result += f"\n\n📝 *{last_summary}*"
+    return result
 
 
 def call_rpg_ai(client, model, temp, messages, extra_tools=None, tools_override=None, currency_name="kredytów"):
@@ -377,8 +381,8 @@ def call_rpg_ai(client, model, temp, messages, extra_tools=None, tools_override=
             "content": result,
         })
 
-    # Przypomnienie o opcjach — Gemini po tool callach czasem je pomija
-    messages.append({"role": "user", "content": "Dokończ odpowiedź. Pamiętaj: zakończ OBOWIĄZKOWO opcjami A) B) C)."})
+    # Przypomnienie o opcjach — bez dosłownego "A) B) C)", bo Gemini kopiuje to literalnie
+    messages.append({"role": "user", "content": "Napisz teraz trzy różne opcje dalszych działań dla gracza."})
     second_response = client.chat.completions.create(
         model=model, messages=messages, temperature=temp
     )
