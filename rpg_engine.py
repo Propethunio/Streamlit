@@ -39,7 +39,7 @@ RPG_TOOLS = [
                         )
                     }
                 },
-                "required": ["summary"]
+                "required": []
             }
         }
     },
@@ -189,21 +189,26 @@ def build_rpg_system_prompt(character, inventory_list, lore_text):
         f"7.2. Nie przesadzaj z nagrodami. Gracz nie powinien co chwilę zdobywać kredytów ani ekwipunku — nagroda ma być rzadsza i satysfakcjonująca.\n"
         f"7.3. Mieszaj napięcie z chwilami ulgi. Jeśli gracz stracił dużo HP, ale przeżył i nie ma bezpośredniego zagrożenia, powinien móc dążyć do uleczenia postaci, jeśli jest to fabularnie sensowne.\n\n"
 
-        f"8. STRUKTURA KAŻDEJ ODPOWIEDZI (OBOWIĄZKOWA):\n"
-        f"8.1. NARRACJA: Najpierw ZAWSZE napisz fabularny opis tego, co się dzieje — minimum 3-4 zdania opisujące skutki akcji gracza, atmosferę, dialogi i rozwój sytuacji. "
-        f"NIE zaczynaj odpowiedzi od razu od opcji A/B/C — to byłby błąd.\n"
-        f"8.2. OPCJE: Dopiero po narracji dopisz na końcu sekcję z wyborami.\n\n"
+        f"8. STRUKTURA KAŻDEJ ODPOWIEDZI (OBOWIĄZKOWA, BEZ WYJĄTKU):\n"
+        f"8.1. NARRACJA: Napisz fabularny opis skutków akcji gracza — minimum 3-4 zdania, atmosfera, dialogi, rozwój sytuacji. "
+        f"NIE zaczynaj od razu od opcji A/B/C.\n"
+        f"8.2. OPCJE: Na SAMYM KOŃCU odpowiedzi, po narracji, ZAWSZE podaj 3 opcje w formacie A) B) C). "
+        f"⚠️ Brak opcji = błąd krytyczny. Nawet jeśli wywołałeś narzędzia, nawet jeśli narracja jest długa — "
+        f"opcje A/B/C MUSZĄ być ostatnim elementem Twojej odpowiedzi.\n\n"
 
         f"9. ZASADY MODYFIKACJI ŚWIATA (NARZĘDZIA):\n"
-        f"9.0. ⚠️ STAN GRY JEST AKTUALNY — sekcja 'AKTUALNY STAN BOHATERA' powyżej odzwierciedla WSZYSTKIE zmiany "
-        f"ze wszystkich poprzednich tur. Każda zmiana HP, {character.get('currency_name', 'kredytów')}, lokacji i ekwipunku "
-        f"z wcześniejszych akcji jest już trwale zapisana. "
-        f"NIE wywołuj narzędzi aby odtworzyć lub potwierdzić zdarzenia opisane w historii rozmowy. "
-        f"Wywołuj narzędzia WYŁĄCZNIE dla zmian będących BEZPOŚREDNIĄ konsekwencją BIEŻĄCEJ akcji gracza.\n"
+        f"9.0. ⚠️ STAN GRY JEST AKTUALNY — AKTUALNY STAN BOHATERA powyżej odzwierciedla wszystkie zmiany "
+        f"z poprzednich tur. NIE wywołuj narzędzi aby ponownie zastosować zmiany z WCZEŚNIEJSZYCH tur "
+        f"(np. jeśli w historii gracz kupił miecz i zapłacił 10 monet, NIE deducktuj tych monet ani NIE dodawaj miecza ponownie — to już zostało zrobione). "
+        f"Wywołuj narzędzia TYLKO dla tego, co dzieje się w BIEŻĄCEJ turze: jeśli w TEJ turze gracz "
+        f"znajduje przedmiot → add_inventory_item; traci HP → modify_stats; wchodzi do nowej lokacji → modify_stats.\n"
         f"9.1. Masz pełną władzę nad statystykami i przedmiotami gracza przy użyciu dostarczonych narzędzi.\n"
-        f"9.2. Wywołaj `modify_stats` OBOWIĄZKOWO gdy: gracz traci lub zyskuje HP, traci lub zarabia {character.get('currency_name', 'kredytów')}, "
-        f"zmienia lokację (new_location), lub wydarzy się coś fabularnie istotnego — zawsze z wypełnionym polem summary.\n"
-        f"9.3. Kiedy gracz znajduje lub kupuje przedmiot – WYWOŁAJ `add_inventory_item`. Gdy go zużywa lub traci – `remove_inventory_item`.\n"
+        f"9.2. Wywołaj `modify_stats` gdy: gracz traci/zyskuje HP, traci/zarabia {character.get('currency_name', 'kredytów')}, "
+        f"zmienia lokację (new_location), lub wydarzy się coś fabularnie istotnego (wypełnij wtedy pole summary). "
+        f"Możesz wywołać modify_stats RAZEM z add_inventory_item w tej samej turze — to nie są wykluczające się narzędzia.\n"
+        f"9.3. ⚠️ ZNALAZŁ PRZEDMIOT = add_inventory_item (ZAWSZE). Jeśli gracz w BIEŻĄCEJ turze znajduje, kupuje lub otrzymuje "
+        f"dowolny przedmiot — nawet jeśli to tylko drobiazg — MUSISZ wywołać `add_inventory_item`. "
+        f"Zmiana lokacji w modify_stats NIE zastępuje dodania przedmiotu. Gdy gracz go traci/zużywa – wywołaj `remove_inventory_item`.\n"
         f"9.4. Jeśli gracz próbuje użyć przedmiotu, którego nie ma w Ekwipunku, opisz niepowodzenie z powodu braku zasobów.\n\n"
 
         f"10. ⛔ ABSOLUTNY ZAKAZ — BLOK STATUSU POSTACI:\n"
@@ -224,13 +229,13 @@ def build_rpg_system_prompt(character, inventory_list, lore_text):
         f"JEDYNYM sposobem na zmianę stanu gry jest WYWOŁANIE NARZĘDZIA (add_inventory_item, modify_stats itp.). "
         f"Pisanie o zmianach ZAMIAST wywołania narzędzi to BŁĄD KRYTYCZNY.\n\n"
 
-        f"13. FORMAT OPCJI (na samym końcu wypowiedzi):\n"
-        f"Maksymalnie 3 opcje, każda od NOWEJ LINII, format:\n"
+        f"13. FORMAT OPCJI — OSTATNI ELEMENT KAŻDEJ ODPOWIEDZI:\n"
+        f"⚠️ ZAWSZE kończ odpowiedź opcjami. Nawet po długiej narracji i wywołaniu narzędzi — opcje muszą być na końcu.\n"
+        f"Dokładnie 3 opcje, każda od NOWEJ LINII:\n"
         f"A) Krótki opis pierwszej akcji\n"
         f"B) Krótki opis drugiej akcji\n"
         f"C) Krótki opis trzeciej akcji\n\n"
-        f"Nie dodawaj żadnego tekstu po opcji C).\n"
-        f"Nie używaj wzorca 'wielka litera + )' nigdzie indziej w narracji."
+        f"Nic po opcji C). Wzorzec 'wielka litera + )' tylko w sekcji opcji."
     )
 
 
@@ -372,6 +377,8 @@ def call_rpg_ai(client, model, temp, messages, extra_tools=None, tools_override=
             "content": result,
         })
 
+    # Przypomnienie o opcjach — Gemini po tool callach czasem je pomija
+    messages.append({"role": "user", "content": "Dokończ odpowiedź. Pamiętaj: zakończ OBOWIĄZKOWO opcjami A) B) C)."})
     second_response = client.chat.completions.create(
         model=model, messages=messages, temperature=temp
     )
